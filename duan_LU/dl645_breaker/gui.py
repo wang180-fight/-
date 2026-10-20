@@ -323,8 +323,8 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("低压塑壳断路器远程控制软件")
-        self.geometry("1200x780")
-        self.minsize(1040, 700)
+        self.geometry("1280x940")
+        self.minsize(1080, 860)
         apply_theme(self)
         self.configure(bg=C_BG)
         self._set_icon()
@@ -473,7 +473,7 @@ class App(tk.Tk):
     def _build_tab_monitor(self):
         """实时监测页: 两列栅格布局, 自适应铺满整个标签页(无空白背景)。
 
-        列1: 实时电气量(上, 按内容高度) + 三相电路动画(正下方, 铺满余下高度)
+        列1: 实时电气量(上, 铺满上方空间) + 三相电路动画(正下方, 固定高度)
         列2: 设备信息 + 远程控制(定宽)
         """
         f = self.tab_monitor
@@ -483,8 +483,8 @@ class App(tk.Tk):
 
         left = ttk.Frame(f)
         left.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
-        left.rowconfigure(0, weight=0)                # 电气量: 按内容高度
-        left.rowconfigure(1, weight=1, minsize=300)   # 动画: 占满余下高度
+        left.rowconfigure(0, weight=1)                # 电气量: 铺满上方主要空间
+        left.rowconfigure(1, weight=0)                # 动画: 固定高度(不再无限拉伸)
         left.columnconfigure(0, weight=1)
         self._build_values_card(left)
         self._build_anim_panel(left)
@@ -497,15 +497,14 @@ class App(tk.Tk):
 
     def _card(self, parent, title):
         """统一样式卡片: 带标题面板。"""
-        return ttk.LabelFrame(parent, text=" %s " % title, padding=10)
+        return ttk.LabelFrame(parent, text=" %s " % title, padding=8)
 
     def _build_values_card(self, parent):
-        """实时电气量卡片: 标题/数值同行紧凑对齐, 内附说明(消除底部游离空白)。"""
+        """实时电气量卡片: 加大字号 + 每行浅灰底条(标签/数值/单位同一底块),
+        底部说明块用淡蓝底并铺满剩余空间。"""
         box = self._card(parent, "实时电气量")
-        box.grid(row=0, column=0, sticky="ew")
-        box.columnconfigure(1, weight=1)
-        box.columnconfigure(2, weight=1)
-        box.columnconfigure(3, weight=1)
+        box.grid(row=0, column=0, sticky="nsew")
+        box.columnconfigure(0, weight=1)
 
         self.lb = {}
         self.lb_w = {}
@@ -517,37 +516,50 @@ class App(tk.Tk):
             ("运行状态字1", "", 1),
             ("运行状态字2", "", 1),
         ]
+        ROW_BG = "#f1f5f9"
+        f_key = (self.FONT, 11, "bold")
+        f_val = (self.FONT, 12, "bold")
+        f_unit = (self.FONT, 10)
         for gr, (title, unit, n) in enumerate(rows):
-            ttk.Label(box, text=title, style="H2.TLabel").grid(
-                row=gr, column=0, sticky=tk.W, padx=(0, 8), pady=1)
-            span = 4 if title.startswith("运行状态字") else 1
+            rowf = tk.Frame(box, bg=ROW_BG)
+            rowf.grid(row=gr, column=0, sticky="ew", pady=(0, 2))
+            rowf.columnconfigure(0, minsize=112)
+            for c in range(1, 4):
+                rowf.columnconfigure(c, weight=1)
+            rowf.columnconfigure(4, minsize=96)
+            tk.Label(rowf, text=title, bg=ROW_BG, fg=C_ACCENT2,
+                     font=f_key, anchor=tk.W, padx=10).grid(
+                row=0, column=0, sticky=tk.W, pady=3)
+            span = 3 if title.startswith("运行状态字") else 1
             for c in range(n):
                 var = tk.StringVar(value="--")
                 self.lb[(title, c)] = var
-                lbl = ttk.Label(box, textvariable=var, style="Card.TLabel",
-                                font=(self.FONT, 10, "bold"), anchor=tk.W)
-                lbl.grid(row=gr, column=1 + c, columnspan=span,
-                         sticky="ew", padx=(2, 0))
+                lbl = tk.Label(rowf, textvariable=var, bg=ROW_BG, fg=C_TEXT,
+                               font=f_val, anchor=tk.W, padx=4)
+                lbl.grid(row=0, column=1 + c, columnspan=span,
+                         sticky=tk.W, pady=3)
                 self.lb_w[(title, c)] = lbl
-            if unit:
-                ttk.Label(box, text=unit, style="CardMuted.TLabel").grid(
-                    row=gr, column=4, sticky=tk.W, padx=(8, 0))
+            tk.Label(rowf, text=unit, bg=ROW_BG, fg=C_MUTED,
+                     font=f_unit, anchor=tk.W, padx=8).grid(
+                row=0, column=4, sticky=tk.W)
 
-        ttk.Separator(box, orient="horizontal").grid(
-            row=len(rows), column=0, columnspan=5, sticky="ew",
-            pady=(6, 4))
-        ttk.Label(box, style="CardMuted.TLabel", justify=tk.LEFT,
-                  wraplength=720,
-                  text=("状态字1: bit6-5=闸位(00分/01合), bit4-0=跳闸原因"
-                        "(遥控/试验类按正常分闸显示); 额定值由控制字4档位决定。\n"
-                        "剩余电流: 寄存器0290FF00(最大相及剩余电流值)。")
-                  ).grid(row=len(rows) + 1, column=0, columnspan=5,
-                         sticky="w")
+        note = tk.Label(
+            box, bg="#eef2ff", fg=C_GRAY, justify=tk.LEFT, anchor=tk.NW,
+            font=(self.FONT, 9), padx=12, pady=8, wraplength=820,
+            text=("状态字1: bit6-5=闸位(00分/01合), bit4-0=跳闸原因"
+                  "(遥控/试验类按正常分闸显示); 额定值由控制字4档位决定。\n"
+                  "剩余电流: 寄存器0290FF00(最大相及剩余电流值)。"))
+        note.grid(row=len(rows), column=0, sticky="nsew", pady=(2, 0))
+        box.rowconfigure(len(rows), weight=1)
+
+        def _fit_note(event):
+            note.configure(wraplength=max(320, event.width - 28))
+        box.bind("<Configure>", _fit_note)
 
     def _build_info_card(self, parent):
         """设备信息卡片(两列紧凑网格)。"""
         info = self._card(parent, "设备信息")
-        info.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        info.grid(row=0, column=0, sticky="ew", pady=(0, 6))
         info.columnconfigure(1, weight=1)
         info.columnconfigure(3, weight=1)
         pairs = [("型号", "固件"), ("地址", "硬件"), ("协议", None)]
@@ -606,7 +618,7 @@ class App(tk.Tk):
     def _build_anim_panel(self, parent):
         """动画卡片: 标题工具条 + 画布, 整体铺满所在列。"""
         card = self._card(parent, "断路器状态动画 · 三相电路")
-        card.grid(row=1, column=0, sticky="nsew", pady=(8, 0))
+        card.grid(row=1, column=0, sticky="ew", pady=(8, 0))
         card.rowconfigure(1, weight=1)
         card.columnconfigure(0, weight=1)
 
@@ -622,7 +634,8 @@ class App(tk.Tk):
         ttk.Spinbox(bar, from_=1, to=10, width=3,
                     textvariable=self.var_arc_delay).pack(side=tk.RIGHT)
 
-        self.canvas = tk.Canvas(card, bg="#fbfcfe", highlightthickness=0)
+        self.canvas = tk.Canvas(card, bg="#fbfcfe", highlightthickness=0,
+                                height=300)
         self.canvas.grid(row=1, column=0, sticky="nsew")
 
     def _anim_state(self):
@@ -638,11 +651,19 @@ class App(tk.Tk):
             return
         self.after(100, self._anim_tick)
 
+    def _rr(self, c, x1, y1, x2, y2, r, **kw):
+        """圆角矩形(Canvas 无原生圆角, 用平滑多边形近似)。"""
+        r = max(0.0, min(float(r), (x2 - x1) / 2.0, (y2 - y1) / 2.0))
+        pts = [x1 + r, y1, x2 - r, y1, x2, y1, x2, y1 + r,
+               x2, y2 - r, x2, y2, x2 - r, y2, x1 + r, y2,
+               x1, y2, x1, y2 - r, x1, y1 + r, x1, y1]
+        return c.create_polygon(pts, smooth=True, **kw)
+
     def _draw_anim(self):
         c = self.canvas
         c.delete("all")
         W = max(360, c.winfo_width())
-        H = max(220, c.winfo_height())
+        H = max(250, c.winfo_height())
         c.create_rectangle(0, 0, W, H, fill="#fbfcfe", outline="")
 
         # 连接状态 / 分合闸状态
@@ -652,22 +673,24 @@ class App(tk.Tk):
         PH = ["#d97706", "#16a34a", "#dc2626"]      # L1黄 L2绿 L3红
         PN = "#1d4ed8"                              # N 蓝
         GRAY = "#cbd5e1"                            # 未带电/未知
+        F = self.FONT
 
-        # ---- 纵向布局: 横幅 / 标题+电路体 / 底部状态条(互不重叠) ----
-        m = 14
-        y_ban_top, y_ban_bot = 8, 40
-        strip_h = 46
+        # ---- 纵向布局: 横幅 / 电路体 / 底部状态条(互不重叠) ----
+        m = 16
+        y_ban_top, y_ban_bot = 10, 44
+        strip_h = 44
         strip_top = H - strip_h
-        y_box_top = 48
-        y_box_bot = strip_top - 58                # 框底, 下方留"互感器名/漏电路径"
-        y_title1 = y_box_top + 14                 # 框内标题(两行, 不压边框)
-        y_title2 = y_box_top + 28
-        y_body_top = y_box_top + 44               # 标题与电路体之间留白
-        y_body_bot = y_box_bot - 6
+        y_box_top = 52
+        y_box_bot = strip_top - 72          # 下方留足"互感器名 + 漏电接地符号"
+        y_title1 = y_box_top + 13
+        y_title2 = y_box_top + 25
+        y_band_bot = y_box_top + 31         # 框内标题色带下沿
+        y_body_top = y_box_top + 46
+        y_body_bot = y_box_bot - 4
         ys = [y_body_top + k * (y_body_bot - y_body_top) / 3.0
               for k in range(4)]                  # L1 L2 L3 N
         yc = (ys[0] + ys[3]) / 2.0
-        amp = min(7.0, (ys[1] - ys[0]) * 0.34)
+        amp = max(5.0, min(7.5, (ys[1] - ys[0]) * 0.30))
 
         # ---- 横向布局: 电源 | 断路器 | 互感器 | 负载 (按可用宽度自适应) ----
         avail = W - 2 * m
@@ -710,10 +733,12 @@ class App(tk.Tk):
             banner, bcol = "分闸(正常)", C_GREEN
         else:
             banner, bcol = "状态未知", C_ORANGE
-        c.create_rectangle(m, y_ban_top, W - m, y_ban_bot, fill=bcol,
-                           outline="")
-        c.create_text(W // 2, (y_ban_top + y_ban_bot) // 2, text=banner,
-                      fill="#ffffff", font=(self.FONT, 15, "bold"))
+        self._rr(c, m + 2, y_ban_top + 3, W - m + 2, y_ban_bot + 3, 10,
+                 fill="#e2e8f0", outline="")                 # 横幅阴影
+        self._rr(c, m, y_ban_top, W - m, y_ban_bot, 10,
+                 fill=bcol, outline="")
+        c.create_text(W / 2.0, (y_ban_top + y_ban_bot) / 2.0, text=banner,
+                      fill="#ffffff", font=(F, 15, "bold"))
 
         # ---- 主线路(先画导线, 其它元素覆盖其上): 电源侧常带电 ----
         pw = PH if energized else [GRAY] * 3
@@ -732,50 +757,62 @@ class App(tk.Tk):
                 c.create_line(a, ys[i], b, ys[i], fill=pw[i], width=4)
         c.create_line(x_src_r, ys[3], x_load_r, ys[3], fill=PN, width=3)
 
-        # ---- 三相电源框(相序标签/正弦波均在框内, 顶部两行标题) ----
-        c.create_rectangle(x_src_l, y_box_top, x_src_r, y_box_bot,
-                           fill="#eef2ff", outline=C_ACCENT, width=2)
+        # ---- 三相电源框(圆角 + 标题色带 + 流动正弦波) ----
+        self._rr(c, x_src_l + 2, y_box_top + 3, x_src_r + 2, y_box_bot + 3, 12,
+                 fill="#e2e8f0", outline="")
+        self._rr(c, x_src_l, y_box_top, x_src_r, y_box_bot, 12,
+                 fill="#eef2ff", outline="#93c5fd", width=2)
+        c.create_rectangle(x_src_l + 2, y_box_top + 2, x_src_r - 2,
+                           y_band_bot, fill="#e0e7ff", outline="")
         c.create_text((x_src_l + x_src_r) / 2, y_title1,
-                      text="三相电源", fill=C_TEXT,
-                      font=(self.FONT, 9, "bold"))
+                      text="三相电源", fill=C_TEXT, font=(F, 9, "bold"))
         c.create_text((x_src_l + x_src_r) / 2, y_title2,
-                      text="AC380V 50Hz", fill=C_GRAY,
-                      font=(self.FONT, 8))
-        lbl_x = x_src_l + 6
-        wave_x0 = x_src_l + 22
-        wave_x1 = x_src_r - 8
+                      text="AC380V 50Hz", fill="#6366f1", font=(F, 8))
+        lbl_x = x_src_l + 12
+        wave_x0 = x_src_l + 52
+        wave_x1 = x_src_r - 10
+        phase = (self._anim_tick_no % 60) / 60.0 * 2.0 * math.pi
         for i in range(3):
-            c.create_text(lbl_x, ys[i], text=["L1", "L2", "L3"][i],
-                          fill=PH[i], font=(self.FONT, 8, "bold"),
-                          anchor=tk.W)
+            c.create_oval(lbl_x - 4, ys[i] - 4, lbl_x + 4, ys[i] + 4,
+                          fill=PH[i], outline="#ffffff", width=1)
+            c.create_text(lbl_x + 8, ys[i], text=["L1", "L2", "L3"][i],
+                          fill=PH[i], font=(F, 8, "bold"), anchor=tk.W)
             pts = []
-            for t in range(0, 33):
-                ang = t / 32.0 * 2.0 * math.pi
-                px = wave_x0 + t / 32.0 * (wave_x1 - wave_x0)
-                py = ys[i] - amp * math.sin(ang + i * 2.0 * math.pi / 3.0)
+            for t in range(0, 37):
+                ang = t / 36.0 * 2.0 * math.pi
+                px = wave_x0 + t / 36.0 * (wave_x1 - wave_x0)
+                py = ys[i] - amp * math.sin(
+                    ang + phase + i * 2.0 * math.pi / 3.0)
                 pts.append((px, py))
             c.create_line(pts, fill=PH[i], width=2, smooth=True)
-        c.create_text(lbl_x, ys[3], text="N", fill=PN,
-                      font=(self.FONT, 8, "bold"), anchor=tk.W)
+        c.create_oval(lbl_x - 4, ys[3] - 4, lbl_x + 4, ys[3] + 4,
+                      fill=PN, outline="#ffffff", width=1)
+        c.create_text(lbl_x + 8, ys[3], text="N", fill=PN,
+                      font=(F, 8, "bold"), anchor=tk.W)
 
-        # ---- 三相负载框 ----
-        c.create_rectangle(x_load_l, y_box_top, x_load_r, y_box_bot,
-                           fill="#fefce8", outline="#ca8a04", width=2)
+        # ---- 三相负载框(圆角 + 标题色带 + 阻抗符号) ----
+        self._rr(c, x_load_l + 2, y_box_top + 3, x_load_r + 2, y_box_bot + 3, 12,
+                 fill="#e2e8f0", outline="")
+        self._rr(c, x_load_l, y_box_top, x_load_r, y_box_bot, 12,
+                 fill="#fefce8", outline="#eab308", width=2)
+        c.create_rectangle(x_load_l + 2, y_box_top + 2, x_load_r - 2,
+                           y_band_bot, fill="#fef3c7", outline="")
         c.create_text((x_load_l + x_load_r) / 2, y_title1,
-                      text="三相负载", fill="#a16207",
-                      font=(self.FONT, 9, "bold"))
+                      text="三相负载", fill="#a16207", font=(F, 9, "bold"))
         c.create_text((x_load_l + x_load_r) / 2, y_title2,
-                      text="各相阻抗", fill="#a16207",
-                      font=(self.FONT, 8))
-        zamp = min(7.0, (ys[1] - ys[0]) * 0.3)
+                      text="各相阻抗", fill="#a16207", font=(F, 8))
+        zcx = (x_load_l + x_load_r) / 2.0
+        zw = max(30.0, min(54.0, (x_load_r - x_load_l) * 0.26))
+        zh = max(5.0, min(9.0, (ys[1] - ys[0]) * 0.26))
         for i in range(3):
-            zx0, zx1 = x_load_l + 8, x_load_r - 8
-            pts = [(zx0, ys[i])]
-            for k in range(5):
-                pts.append((zx0 + (zx1 - zx0) * (k + 0.5) / 5.0,
-                            ys[i] + zamp * (-1 if k % 2 == 0 else 1)))
-            pts.append((zx1, ys[i]))
-            c.create_line(pts, fill=(PH[i] if energized else GRAY), width=2)
+            col = PH[i] if energized else "#d1d5db"
+            c.create_line(x_load_l + 10, ys[i], zcx - zw / 2, ys[i],
+                          fill=col, width=2)
+            c.create_line(zcx + zw / 2, ys[i], x_load_r - 10, ys[i],
+                          fill=col, width=2)
+            self._rr(c, zcx - zw / 2, ys[i] - zh, zcx + zw / 2,
+                     ys[i] + zh, 3, fill="#fffbeb",
+                     outline=(PH[i] if energized else "#cbd5e1"), width=2)
 
         # ---- 断路器 QF(三极联动): 合闸=红, 分闸=绿, 保护故障跳闸红闪 ----
         if not live:
@@ -784,16 +821,19 @@ class App(tk.Tk):
             bcol = C_RED
         elif pos == 0 and is_fault_reason(reason):
             blink = (self._anim_tick_no // 6) % 2 == 0
-            bcol = C_RED if blink else "#fecaca"
+            bcol = C_RED if blink else "#fca5a5"
         else:
             bcol = C_GREEN
-        c.create_rectangle(x_brk_l, y_box_top, x_brk_r, y_box_bot,
-                           fill="#ffffff", outline=bcol, width=3)
-        c.create_text(x_brk_l + 10, y_title1, text="断路器 QF",
-                      fill=C_TEXT, font=(self.FONT, 9, "bold"),
-                      anchor=tk.W)
-        c.create_text(x_brk_l + 10, y_title2, text="(三极联动)",
-                      fill=C_GRAY, font=(self.FONT, 8), anchor=tk.W)
+        self._rr(c, x_brk_l + 2, y_box_top + 3, x_brk_r + 2, y_box_bot + 3, 12,
+                 fill="#e2e8f0", outline="")
+        self._rr(c, x_brk_l, y_box_top, x_brk_r, y_box_bot, 12,
+                 fill="#ffffff", outline=bcol, width=3)
+        c.create_rectangle(x_brk_l + 2, y_box_top + 2, x_brk_r - 2,
+                           y_band_bot, fill="#f1f5f9", outline="")
+        c.create_text(x_brk_l + 12, y_title1, text="断路器 QF",
+                      fill=C_TEXT, font=(F, 9, "bold"), anchor=tk.W)
+        c.create_text(x_brk_l + 12, y_title2, text="三极联动",
+                      fill=C_GRAY, font=(F, 8), anchor=tk.W)
         if not live:
             ccol = GRAY                             # 未连接/通讯中断
         elif pos == 1 or is_fault_reason(reason):
@@ -801,69 +841,76 @@ class App(tk.Tk):
         else:
             ccol = C_GREEN                          # 分闸(含遥控/试验): 绿
         # 三极联动连杆(虚线)示意三极同步动作
-        c.create_line(x_sw + 20, ys[0] - 4, x_sw + 20, ys[2] + 4,
+        c.create_line(x_sw + 22, ys[0] - 4, x_sw + 22, ys[2] + 4,
                       fill="#94a3b8", width=2, dash=(4, 3))
         for i in range(3):
             y = ys[i]
             hx, fx = x_sw - 10, x_sw + 10
-            c.create_oval(hx - 4, y - 4, hx + 4, y + 4, fill=ccol,
-                          outline="")
-            c.create_oval(fx - 4, y - 4, fx + 4, y + 4, fill=ccol,
-                          outline="")
+            c.create_oval(hx - 5, y - 5, hx + 5, y + 5, fill=ccol,
+                          outline="#ffffff", width=1)
+            c.create_oval(fx - 5, y - 5, fx + 5, y + 5, fill=ccol,
+                          outline="#ffffff", width=1)
             if energized:
-                c.create_line(hx, y, fx, y, fill=ccol, width=4)
+                c.create_line(hx, y, fx, y, fill=ccol, width=5)
             else:
                 # 分闸/未连接/通讯中断: 触头断开(上翘)
-                c.create_line(hx, y, fx - 6, y - 16, fill=ccol, width=4)
+                c.create_line(hx, y, fx - 7, y - 10, fill=ccol, width=5)
 
         # ---- 剩余电流互感器(L1/L2/L3/N 全部穿过铁芯窗口) ----
-        c.create_rectangle(x_ct_l, y_body_top - 10, x_ct_r, y_body_bot + 2,
-                           fill="#eff6ff", outline=C_ACCENT, width=3)
-        c.create_rectangle(x_ct - 20, y_body_top - 4, x_ct + 20,
-                           y_body_bot - 2, fill="#fbfcfe", outline="#bfdbfe",
-                           width=1)
-        c.create_text(x_ct - 26, yc, text="ΔI", fill=C_ACCENT,
-                      font=(self.FONT, 11, "bold"))
+        self._rr(c, x_ct_l, y_body_top - 12, x_ct_r, y_body_bot + 4, 10,
+                 fill="#eff6ff", outline=C_ACCENT, width=3)
+        self._rr(c, x_ct - 22, y_body_top - 6, x_ct + 22, y_body_bot - 2, 6,
+                 fill="#fbfcfe", outline="#bfdbfe", width=1)
+        for i in range(4):                      # 铁芯窗口内导线可见
+            col = pw[i] if i < 3 else PN
+            c.create_line(x_ct - 22, ys[i], x_ct + 22, ys[i],
+                          fill=col, width=3)
+        c.create_text(x_ct - 27, yc, text="ΔI", fill=C_ACCENT,
+                      font=(F, 11, "bold"))
         c.create_text(x_ct, y_box_bot + 16, text="剩余电流互感器",
-                      fill=C_GRAY, font=(self.FONT, 9), anchor=tk.CENTER)
+                      fill=C_GRAY, font=(F, 9), anchor=tk.CENTER)
 
-        # ---- 漏电指示(在线且剩余电流>0 时画对地漏电路径) ----
+        # ---- 漏电指示(引线 + 接地符号, 置于状态条上方留白区, 不再被遮挡) ----
         if live and self._residual > 0:
-            gx = x_load_l + 55
-            gy = y_box_bot + 8 + 22
-            c.create_line(gx, y_box_bot + 8, gx, gy, fill=C_RED, width=2,
+            gx = x_load_l + 58
+            gtop = y_box_bot + 8
+            gy = gtop + 20
+            c.create_line(gx, y_box_bot, gx, gy, fill=C_RED, width=2,
                           dash=(5, 3))
-            c.create_text(gx + 6, (y_box_bot + 8 + gy) / 2,
-                          text="漏电电流 %.0f mA" % self._residual,
-                          fill=C_RED, font=(self.FONT, 8), anchor=tk.W)
-            for k, wdt in enumerate((22, 15, 8)):
-                c.create_line(gx - wdt, gy + 6 + k * 6, gx + wdt,
-                              gy + 6 + k * 6, fill=C_RED, width=2)
-            c.create_text(gx, gy + 27, text="PE/大地", fill=C_RED,
-                          font=(self.FONT, 8))
+            c.create_text(gx + 9, gtop + 8,
+                          text="漏电电流 %.1f mA" % self._residual,
+                          fill=C_RED, font=(F, 9, "bold"), anchor=tk.W)
+            for k, wdt in enumerate((20, 14, 8)):
+                c.create_line(gx - wdt, gy + 4 + k * 5, gx + wdt,
+                              gy + 4 + k * 5, fill=C_RED, width=2)
+            c.create_text(gx, gy + 25, text="PE", fill=C_RED, font=(F, 8))
 
-        # ---- 电流流动动画(合闸带电时, 白色亮点流动) ----
+        # ---- 电流流动动画(合闸带电时, 白色亮点沿导线流动) ----
         if energized:
-            spd = 14 if max(self._i3) > 1 else 24
-            off = (self._anim_tick_no // 2) % spd
-            seg = 20
+            spd = 28 if max(self._i3) > 1 else 44
+            off = (self._anim_tick_no * 3) % spd
             for i in range(3):
-                for (a, b) in seg_dn():
-                    x = a + off
-                    while x + seg <= b:
-                        c.create_line(x, ys[i], x + seg, ys[i], fill="#ffffff",
-                                      width=3, capstyle="round")
-                        x += spd
+                x = x_src_r + off
+                while x < x_load_r - 8:
+                    skip = (x_brk_l - 2 < x < x_brk_r + 2) or \
+                           (x_ct_l - 2 < x < x_ct_r + 2)
+                    if not skip:
+                        c.create_oval(x - 3, ys[i] - 3, x + 3, ys[i] + 3,
+                                      fill="#ffffff", outline="")
+                    x += spd
             # N 回流(负载 -> 电源)
-            x = x_load_r - off
-            while x - seg >= x_src_r:
-                c.create_line(x, ys[3], x - seg, ys[3], fill="#ffffff",
-                              width=3, capstyle="round")
+            x = x_load_r - 8 - off
+            while x > x_src_r + 8:
+                if not (x_ct_l - 2 < x < x_ct_r + 2):
+                    c.create_oval(x - 2.5, ys[3] - 2.5, x + 2.5, ys[3] + 2.5,
+                                  fill="#ffffff", outline="")
                 x -= spd
 
-        # ---- 底部状态条(文本按实际宽度流动布局, 避免重叠) ----
-        c.create_rectangle(m, strip_top, W - m, H - 8, fill="#f8fafc",
-                           outline=C_LINE, width=2)
+        # ---- 底部状态条(圆角 + 状态灯 + 数值, 文本按实际宽度流动布局) ----
+        self._rr(c, m + 2, strip_top + 3, W - m + 2, H - 5, 12,
+                 fill="#e2e8f0", outline="")                 # 状态条阴影
+        self._rr(c, m, strip_top, W - m, H - 8, 12,
+                 fill="#f8fafc", outline=C_LINE, width=2)
         if not self.worker.connected:
             st_text, st_col = "未连接", C_GRAY
         elif self._stale:
@@ -883,35 +930,44 @@ class App(tk.Tk):
         else:
             led = C_GREEN                           # 分闸(含遥控/试验)
         c.create_oval(28, strip_top + 9, 44, strip_top + 25, fill=led,
-                      outline="")
+                      outline="#ffffff", width=2)
 
-        f10 = tkfont.Font(family=self.FONT, size=10)
-        f10b = tkfont.Font(family=self.FONT, size=10, weight="bold")
+        f10 = tkfont.Font(family=self.FONT, size=9)
+        f10b = tkfont.Font(family=self.FONT, size=9, weight="bold")
         xcur = 52
         items = [
-            ("保护状态: %s" % st_text, C_TEXT, f10),
+            ("保护状态: %s" % st_text, st_col if live else C_GRAY, f10b),
             ("剩余电流: %.1f mA" % self._residual,
              self._res_color(self._residual) if live else C_MUTED, f10b),
             ("额定动作值: %d mA" % self._rated_res,
              C_TEXT if live else C_MUTED, f10),
         ]
+        limit = W - m - 12
+        if self._arc_left is not None and live:
+            limit -= 214                       # 预留右侧自动重合闸进度条
         for txt, col, fnt in items:
-            c.create_text(xcur, strip_top + 17, text=txt, fill=col,
+            tw = fnt.measure(txt)
+            if xcur + tw > limit:              # 窄窗口下宁可少显示, 也不截断/重叠
+                break
+            c.create_text(xcur, strip_top + 18, text=txt, fill=col,
                           font=fnt, anchor=tk.W)
-            xcur += fnt.measure(txt) + 26
+            xcur += tw + 18
 
         if self._arc_left is not None and live:
             total = max(1, int(self.var_arc_delay.get() or 3))
             frac = max(0.0, min(1.0, self._arc_left / total))
-            bw = 200
-            bx = W - m - bw
-            c.create_rectangle(bx, strip_top + 9, bx + bw, strip_top + 25,
-                               outline=C_LINE, width=2)
-            c.create_rectangle(bx, strip_top + 9, bx + bw * frac,
-                               strip_top + 25, fill=C_RED, outline="")
-            c.create_text(bx + bw / 2, strip_top + 17,
+            bw = 190
+            bx = W - m - bw - 8
+            self._rr(c, bx, strip_top + 8, bx + bw, strip_top + 28, 8,
+                     fill="#ffffff", outline=C_LINE, width=1)
+            if frac > 0.02:
+                self._rr(c, bx + 2, strip_top + 10,
+                         bx + 2 + (bw - 4) * frac, strip_top + 26, 6,
+                         fill=C_RED, outline="")
+            c.create_text(bx + bw / 2, strip_top + 18,
                           text="自动重合闸 %ds" % self._arc_left,
-                          fill="#ffffff", font=(self.FONT, 9, "bold"))
+                          fill="#ffffff" if frac > 0.35 else C_RED,
+                          font=(F, 9, "bold"))
 
     def _maybe_arc(self):
         """保护故障跳闸后按设定延时自动合闸(演示自动重合闸)。
@@ -970,7 +1026,7 @@ class App(tk.Tk):
                   ).pack(side=tk.LEFT, padx=(4, 0))
 
         act = self._card(f, "立即执行")
-        act.grid(row=2, column=0, sticky="ew", pady=(8, 0))
+        act.grid(row=2, column=0, sticky="ew", pady=(6, 0))
         grid1 = ttk.Frame(act, style="Card.TFrame")
         grid1.pack(fill=tk.X)
         for i, (txt, act_key) in enumerate(
@@ -985,7 +1041,7 @@ class App(tk.Tk):
         grid1.columnconfigure(1, weight=1)
 
         sch = self._card(f, "预约执行 · 延时后自动执行")
-        sch.grid(row=3, column=0, sticky="ew", pady=(8, 0))
+        sch.grid(row=3, column=0, sticky="ew", pady=(6, 0))
         top = ttk.Frame(sch, style="Card.TFrame")
         top.pack(fill=tk.X)
         ttk.Label(top, text="延迟:", style="Card.TLabel").pack(side=tk.LEFT)
@@ -1010,14 +1066,19 @@ class App(tk.Tk):
                                                        pady=(8, 0))
 
         warn = self._card(f, "安全提醒 · 教学演示")
-        warn.grid(row=4, column=0, sticky="nsew", pady=(8, 0))
-        ttk.Label(warn, justify=tk.LEFT, wraplength=330,
-                  style="Card.TLabel", foreground="#92400e",
-                  text=("1. 合/分闸、试跳均为真实断路器动作, 操作前确认现场无人作业。\n"
-                        "2. 试跳模拟剩余电流故障, 断路器将分闸, 用于检验保护动作。\n"
-                        "3. 预约控制: 延迟+单位(分/时), 到点自动执行, 可[取消预约]。\n"
-                        "4. 所有写操作需正确密码与操作者代码, 并存入事件记录。")
-                  ).pack(anchor=tk.W)
+        warn.grid(row=4, column=0, sticky="nsew", pady=(6, 0))
+        warn_lbl = ttk.Label(
+            warn, justify=tk.LEFT, wraplength=430, font=(self.FONT, 9),
+            style="Card.TLabel", foreground="#92400e",
+            text=("1. 合/分闸、试跳为真实断路器动作, 确认现场无人。\n"
+                  "2. 试跳模拟剩余电流故障, 断路器将分闸。\n"
+                  "3. 预约控制到点自动执行, 可[取消预约]。\n"
+                  "4. 写操作需密码与操作者代码, 存入事件记录。"))
+        warn_lbl.pack(anchor=tk.W, fill=tk.X)
+
+        def _fit_warn(event):
+            warn_lbl.configure(wraplength=max(220, event.width - 24))
+        warn.bind("<Configure>", _fit_warn)
         # 右列: 认证/立即/预约固定高, 安全提醒吸收剩余空间
         f.rowconfigure(4, weight=1)
 
