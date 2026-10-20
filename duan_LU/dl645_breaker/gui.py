@@ -35,6 +35,29 @@ from .device import (BreakerClient, SerialTransport, VirtualTransport,
 
 REASON_TABLE = S.REASON_TABLE
 
+# 遥控 / 试验 / 设置类分闸原因: 属正常分闸动作(非保护故障), 不红色闪烁。
+# 只有其余原因(剩余电流、过载、短路、缺相、欠压、过压、接地、停电…
+# 以及闭锁、互感器故障、合闸/跳闸失败等)才算"故障跳闸"。
+SWITCH_ACTION_REASONS = {
+    0x0D: "远程试验",
+    0x0E: "按键试验",
+    0x13: "设置更改",
+    0x1D: "硬遥控",
+    0x1E: "软遥控(远程分闸)",
+}
+
+
+def is_fault_reason(reason):
+    """原因码是否属于保护/异常跳闸(遥控、试验、设置类动作不算故障)。"""
+    return bool(reason) and reason not in SWITCH_ACTION_REASONS
+
+
+def reason_text(reason):
+    """原因码文案; 遥控类补充说明(如 0x1E -> 软遥控(远程分闸))。"""
+    if reason in SWITCH_ACTION_REASONS:
+        return SWITCH_ACTION_REASONS[reason]
+    return REASON_TABLE.get(reason, "原因0x%02X" % reason)
+
 # 跳闸次数模块(038100FF) 0x00-0x0B 按规约表A.2.2的分类, 与故障原因编码不同
 TRIP_COUNT_NAMES = [
     "总跳闸次数",
@@ -515,8 +538,8 @@ class App(tk.Tk):
             pady=(6, 4))
         ttk.Label(box, style="CardMuted.TLabel", justify=tk.LEFT,
                   wraplength=720,
-                  text=("状态字1: bit6-5=闸位(00分/01合), bit4-0=跳闸原因; "
-                        "额定值由控制字4档位决定。\n"
+                  text=("状态字1: bit6-5=闸位(00分/01合), bit4-0=跳闸原因"
+                        "(遥控/试验类按正常分闸显示); 额定值由控制字4档位决定。\n"
                         "剩余电流: 寄存器0290FF00(最大相及剩余电流值)。")
                   ).grid(row=len(rows) + 1, column=0, columnspan=5,
                          sticky="w")
@@ -570,12 +593,13 @@ class App(tk.Tk):
         return C_ACCENT
 
     def _st_color(self):
-        """状态字1 配色(与动画一致): 合闸=红(带电), 分闸=绿, 故障跳闸=橙。"""
+        """状态字1 配色(与动画一致): 合闸=红(带电), 分闸=绿,
+        保护故障跳闸=红, 遥控/试验分闸=绿, 状态未知=橙。"""
         pos, reason = (self._st1 >> 5) & 0x03, self._st1 & 0x1F
         if pos == 1:
             return C_RED
         if pos == 0:
-            return C_ORANGE if reason else C_GREEN
+            return C_RED if is_fault_reason(reason) else C_GREEN
         return C_ORANGE
 
     # ==================== 三相电路动画(内嵌于实时监测页) ====================
@@ -668,17 +692,20 @@ class App(tk.Tk):
         x_load_l = x_ct_r + gap
         x_load_r = W - m
 
-        # ---- 顶部状态横幅(合闸=红, 分闸=绿; 故障跳闸红/暗红闪烁) ----
+        # ---- 顶部状态横幅(合闸=红, 分闸=绿; 保护故障红/暗红闪烁;
+        #      遥控/试验/设置类分闸按"分闸"显示为绿) ----
         if not self.worker.connected:
             banner, bcol = "未连接设备 · 请先连接设备", "#64748b"
         elif self._stale:
             banner, bcol = "通讯中断 · 等待设备恢复应答", C_ORANGE
         elif energized:
             banner, bcol = "合闸运行", C_RED
-        elif pos == 0 and reason:
-            banner = "故障跳闸 · %s" % REASON_TABLE.get(
-                reason, "原因0x%02X" % reason)
+        elif pos == 0 and is_fault_reason(reason):
+            banner = "故障跳闸 · %s" % reason_text(reason)
             bcol = C_RED if (self._anim_tick_no // 6) % 2 == 0 else "#b91c1c"
+        elif pos == 0 and reason:
+            banner = "分闸 · %s" % reason_text(reason)
+            bcol = C_GREEN
         elif pos == 0:
             banner, bcol = "分闸(正常)", C_GREEN
         else:
@@ -750,12 +777,12 @@ class App(tk.Tk):
             pts.append((zx1, ys[i]))
             c.create_line(pts, fill=(PH[i] if energized else GRAY), width=2)
 
-        # ---- 断路器 QF(三极联动): 合闸=红, 分闸=绿, 故障跳闸红闪 ----
+        # ---- 断路器 QF(三极联动): 合闸=红, 分闸=绿, 保护故障跳闸红闪 ----
         if not live:
             bcol = "#cbd5e1"
         elif pos == 1:
             bcol = C_RED
-        elif pos == 0 and reason:
+        elif pos == 0 and is_fault_reason(reason):
             blink = (self._anim_tick_no // 6) % 2 == 0
             bcol = C_RED if blink else "#fecaca"
         else:
@@ -769,10 +796,10 @@ class App(tk.Tk):
                       fill=C_GRAY, font=(self.FONT, 8), anchor=tk.W)
         if not live:
             ccol = GRAY                             # 未连接/通讯中断
-        elif pos == 1 or (pos == 0 and reason):
-            ccol = C_RED                            # 合闸(闭合)/故障跳闸: 红
+        elif pos == 1 or is_fault_reason(reason):
+            ccol = C_RED                            # 合闸(闭合)/保护故障跳闸: 红
         else:
-            ccol = C_GREEN                          # 分闸(断开): 绿
+            ccol = C_GREEN                          # 分闸(含遥控/试验): 绿
         # 三极联动连杆(虚线)示意三极同步动作
         c.create_line(x_sw + 20, ys[0] - 4, x_sw + 20, ys[2] + 4,
                       fill="#94a3b8", width=2, dash=(4, 3))
@@ -843,13 +870,18 @@ class App(tk.Tk):
             st_text, st_col = "通讯中断", C_ORANGE
         elif energized:
             st_text, st_col = "合闸运行", C_RED
+        elif pos == 0 and is_fault_reason(reason):
+            st_text, st_col = "故障跳闸 · %s" % reason_text(reason), C_RED
         elif pos == 0 and reason:
-            st_text, st_col = "故障跳闸", C_RED
+            st_text, st_col = "分闸 · %s" % reason_text(reason), C_GREEN
         else:
             st_text, st_col = "分闸", C_GREEN
-        led = (C_RED if energized else
-               (C_RED if (live and pos == 0 and reason) else
-                (C_GREEN if live else C_GRAY)))
+        if not live:
+            led = C_GRAY                            # 未连接/通讯中断
+        elif energized or is_fault_reason(reason):
+            led = C_RED                             # 合闸(带电)/保护故障跳闸
+        else:
+            led = C_GREEN                           # 分闸(含遥控/试验)
         c.create_oval(28, strip_top + 9, 44, strip_top + 25, fill=led,
                       outline="")
 
@@ -882,12 +914,13 @@ class App(tk.Tk):
                           fill="#ffffff", font=(self.FONT, 9, "bold"))
 
     def _maybe_arc(self):
-        """故障跳闸后按设定延时自动合闸(演示自动重合闸)。"""
+        """保护故障跳闸后按设定延时自动合闸(演示自动重合闸)。
+        遥控/试验类分闸不触发(那是人为分闸, 不应自动重合)。"""
         pos, reason = self._anim_state()
         if not self.var_arc_enable.get():
             self._arc_left = None
             return
-        fault = (pos == 0 and reason != 0) or pos == 2
+        fault = (pos == 0 and is_fault_reason(reason)) or pos == 2
         if fault and self._arc_left is None and self.worker.connected \
                 and not self._stale:
             try:

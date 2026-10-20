@@ -39,5 +39,6 @@ _tls*.txt
 _cred.txt
 _commit_msg.txt
 _verify_layout.py
+_verify_trip.py
 _gui_numbered.txt
 
