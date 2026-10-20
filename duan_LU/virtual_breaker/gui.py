@@ -3,8 +3,8 @@
 
 布局:
     顶部   标题 + 时钟
-    左侧   通讯设置(端口/波特率/数据位/校验/停止位/从站地址/监听)
-    右侧   页签
+    工具条 RS485 设备通信(端口/地址/波特率/数据位/校验/停止位/监听) + 联调步骤
+    页签
              1) 设备本体     实物面板(手柄/指示灯/液晶/按钮/端子/RS485)+就地操作
              2) 运行数据     三相电气量 / 波形 / 工况参数
              3) 指令台(选学) 主站侧组帧、发送、回显、帧分解(无上位机时自测)
@@ -180,9 +180,9 @@ class App(tk.Tk):
     def _build_body(self):
         body = ttk.Frame(self, padding=(8, 0, 8, 4))
         body.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
-        self._build_sidebar(body)
+        self._build_commbar(body)
         nb = ttk.Notebook(body)
-        nb.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(8, 0))
+        nb.pack(side=tk.TOP, fill=tk.BOTH, expand=True, pady=(6, 0))
         self.nb = nb
 
         self.tab_device = ttk.Frame(nb, padding=6)
@@ -205,16 +205,9 @@ class App(tk.Tk):
 
 
 
-    # ------------------------------------------------------------------
-    # 左侧: 通讯设置
-    # ------------------------------------------------------------------
-    def _build_sidebar(self, parent):
-        side = ttk.Frame(parent, width=300)
-        side.pack(side=tk.LEFT, fill=tk.Y)
-        side.pack_propagate(False)
-
-        box = ttk.LabelFrame(side, text="设备通信(RS485 从站)", padding=10)
-        box.pack(fill=tk.X)
+    def _build_commbar(self, parent):
+        bar = ttk.LabelFrame(parent, text=" RS485 设备通信 ", padding=(8, 5))
+        bar.pack(side=tk.TOP, fill=tk.X)
 
         self.var_port = tk.StringVar(value="")
         self.var_baud = tk.StringVar(value="9600")
@@ -224,97 +217,74 @@ class App(tk.Tk):
         self.var_slave_addr = tk.StringVar(value="000000000001")
         self.port_map = {}
 
-        def row(r, text, widget):
-            ttk.Label(box, text=text, style="Card.TLabel").grid(
-                row=r, column=0, sticky=tk.W, pady=4)
-            widget.grid(row=r, column=1, sticky="ew", pady=4)
-            return widget
+        def lab(text, pad=(8, 2)):
+            ttk.Label(bar, text=text, style="Card.TLabel").pack(
+                side=tk.LEFT, padx=pad)
 
-        box.columnconfigure(1, weight=1)
-        self.cmb_port = ttk.Combobox(box, textvariable=self.var_port,
-                                     width=22)
-        row(0, "端口号:", self.cmb_port)
-        port_row = ttk.Frame(box, style="Card.TFrame")
-        port_row.grid(row=1, column=0, columnspan=2, sticky="ew")
-        ttk.Button(port_row, text="刷新端口", style="Secondary.TButton",
-                   command=self._refresh_ports).pack(side=tk.LEFT)
-        ttk.Label(port_row, text="(虚拟串口对的一端)", style="CardMuted.TLabel"
-                  ).pack(side=tk.LEFT, padx=6)
+        lab("端口号:", (2, 2))
+        self.cmb_port = ttk.Combobox(bar, textvariable=self.var_port, width=24)
+        self.cmb_port.pack(side=tk.LEFT)
+        ttk.Button(bar, text="刷新", style="Secondary.TButton",
+                   command=self._refresh_ports).pack(side=tk.LEFT, padx=4)
+        lab("从站地址:")
+        ttk.Entry(bar, textvariable=self.var_slave_addr,
+                  width=13).pack(side=tk.LEFT)
+        lab("波特率:")
+        ttk.Combobox(bar, textvariable=self.var_baud, width=6,
+                     values=["1200", "2400", "4800", "9600", "19200",
+                             "38400"]).pack(side=tk.LEFT)
+        lab("数据位:")
+        ttk.Combobox(bar, textvariable=self.var_bytesize, width=3,
+                     values=["8", "7", "6", "5"]).pack(side=tk.LEFT)
+        lab("校验:")
+        ttk.Combobox(bar, textvariable=self.var_parity, width=6,
+                     values=["偶校验", "奇校验", "无校验"]).pack(side=tk.LEFT)
+        lab("停止位:")
+        ttk.Combobox(bar, textvariable=self.var_stopbits, width=3,
+                     values=["1", "2"]).pack(side=tk.LEFT)
 
-        row(2, "波特率:", ttk.Combobox(
-            box, textvariable=self.var_baud,
-            values=["1200", "2400", "4800", "9600", "19200", "38400"],
-            width=10))
-        row(3, "数据位:", ttk.Combobox(
-            box, textvariable=self.var_bytesize, values=["8", "7", "6", "5"],
-            width=10))
-        row(4, "校验:", ttk.Combobox(
-            box, textvariable=self.var_parity,
-            values=["偶校验", "奇校验", "无校验"], width=10))
-        row(5, "停止位:", ttk.Combobox(
-            box, textvariable=self.var_stopbits, values=["1", "2"], width=10))
-        row(6, "从站地址:", ttk.Entry(box, textvariable=self.var_slave_addr,
-                                      width=14))
-
-        btns = ttk.Frame(box, style="Card.TFrame")
-        btns.grid(row=7, column=0, columnspan=2, sticky="ew", pady=(8, 2))
-        self.btn_listen = ttk.Button(btns, text="开始监听",
+        self.btn_listen = ttk.Button(bar, text="开始监听",
                                      command=self._start_server)
-        self.btn_listen.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        self.btn_stop = ttk.Button(btns, text="停止", style="Secondary.TButton",
+        self.btn_listen.pack(side=tk.LEFT, padx=(12, 4))
+        self.btn_stop = ttk.Button(bar, text="停止", style="Secondary.TButton",
                                    command=self._stop_server,
                                    state=tk.DISABLED)
-        self.btn_stop.pack(side=tk.LEFT, padx=(6, 0))
+        self.btn_stop.pack(side=tk.LEFT)
 
-
-        # ---- 运行状态灯 ----
-        state = ttk.Frame(side, padding=(2, 10, 2, 0))
-        state.pack(fill=tk.X)
-        self.lamp = tk.Canvas(state, width=14, height=14, highlightthickness=0,
-                              bg=C_BG)
-        self.lamp.pack(side=tk.LEFT)
+        # ---- 右侧: 联调步骤 / 收帧统计 / 运行状态灯 ----
+        ttk.Button(bar, text="联调步骤", style="Secondary.TButton",
+                   command=self._show_steps).pack(side=tk.RIGHT, padx=(6, 0))
+        self.var_rx = tk.StringVar(value="收帧 0 · 应答 0")
+        ttk.Label(bar, textvariable=self.var_rx, style="Sub.TLabel").pack(
+            side=tk.RIGHT, padx=(10, 6))
+        self.var_link_text = tk.StringVar(value="未监听")
+        ttk.Label(bar, textvariable=self.var_link_text,
+                  style="Card.TLabel").pack(side=tk.RIGHT, padx=(8, 0))
+        self.lamp = tk.Canvas(bar, width=14, height=14, highlightthickness=0,
+                              bg=C_PANEL)
+        self.lamp.pack(side=tk.RIGHT, padx=(4, 0))
         self._lamp_id = self.lamp.create_oval(2, 2, 12, 12, fill="#cbd5e1",
                                               outline="")
-        self.var_link_text = tk.StringVar(value="未监听")
-        ttk.Label(state, textvariable=self.var_link_text).pack(
-            side=tk.LEFT, padx=(6, 0))
-        self.var_rx = tk.StringVar(value="收帧 0 · 应答 0")
-        ttk.Label(side, textvariable=self.var_rx, style="Sub.TLabel"
-                  ).pack(anchor="w", padx=2)
 
-        # ---- 主站调试链路 ----
-        link = ttk.LabelFrame(side, text="调试主站链路", padding=10)
-        link.pack(fill=tk.X, pady=(10, 0))
-        self.var_link_mode = tk.StringVar(value="loop")
-        ttk.Radiobutton(link, text="内置回环(不需串口)",
-                        variable=self.var_link_mode, value="loop",
-                        command=self._on_link_change).pack(anchor="w")
-        ttk.Radiobutton(link, text="串口(需串口对另一端)",
-                        variable=self.var_link_mode, value="serial",
-                        command=self._on_link_change).pack(anchor="w")
-        self.var_master_port = tk.StringVar(value="")
-        self.cmb_master = ttk.Combobox(link, textvariable=self.var_master_port,
-                                       values=[], width=24)
-        self.cmb_master.pack(fill=tk.X, pady=(6, 0))
-        ttk.Label(link, text="提示: 上位机连 COM4 时本软件监听 COM5;\n"
-                             "串口自测需再备一对虚拟串口。",
-                  style="CardMuted.TLabel", justify=tk.LEFT).pack(
-            anchor="w", pady=(6, 0))
+    def _show_steps(self):
+        win = tk.Toplevel(self)
+        win.title("联调步骤(虚拟设备 <-> 上位机)")
+        win.configure(bg=C_PANEL)
+        win.transient(self)
+        tk.Label(win, justify=tk.LEFT, anchor="nw", bg=C_PANEL, fg=C_TEXT,
+                 font=(self.FONT, 10), padx=18, pady=16,
+                 text=("1. 用 com0com 建一对虚拟串口, 如 COM4 <-> COM5;\n"
+                       "2. 本设备选 COM5, 9600/8E1, 点[开始监听];\n"
+                       "3. 上位机选 COM4 并[连接设备](串口模式);\n"
+                       "4. 上位机读实时量、遥控分合闸、读写参数、读事件;\n"
+                       "5. 在[设备本体]点故障按钮(漏电/过载/短路...), 观察\n"
+                       "   手柄脱扣、TRIP 指示、指示灯与上位机告警;\n"
+                       "6. 把面板拨钮拨到[本地], 上位机遥控将回 10H 失败。")
+                 ).pack()
+        ttk.Button(win, text="知道了", command=win.destroy).pack(pady=(0, 14))
+        win.resizable(False, False)
+        win.grab_set()
 
-        tip = ttk.LabelFrame(side, text="课堂联调步骤", padding=8)
-        tip.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
-        tk.Label(tip, justify=tk.LEFT, anchor="nw", bg=C_PANEL,
-                 fg=C_GRAY, font=(self.FONT, 9), wraplength=268,
-                 text=("1. 用 com0com 建虚拟串口对, 如 COM4<->COM5;\n"
-                       "2. 本设备选 COM5, 8E1/9600, 点击[开始监听];\n"
-                       "3. 打开上位机选 COM4 并连接, 即可读实时量、\n"
-                       "   远程合分闸、读写参数、读事件记录;\n"
-                       "4. 在[设备本体]点故障按钮注入漏电/过载,\n"
-                       "   观察手柄动作、脱扣指示与上位机告警;\n"
-                       "5. 点[手柄]或[合闸/分闸/试验/复位]可就地\n"
-                       "   操作, 与真实断路器一致。")).pack(
-            fill=tk.BOTH, expand=True)
-        self._on_link_change()
 
     def _refresh_ports(self):
         ports = available_ports()
@@ -668,6 +638,28 @@ class App(tk.Tk):
         self._bench_read(f, 0)
         self._bench_ctrl(f, 1)
         self._bench_test(f, 2)
+        self._bench_link(f)
+
+    def _bench_link(self, parent):
+        """指令台底部的自测链路: 内置回环(无需串口) 或 另一对串口。"""
+        box = ttk.LabelFrame(parent, text="调试主站链路(本机自测用, 与设备通信无关)",
+                             padding=8)
+        box.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(8, 0))
+        self.var_link_mode = tk.StringVar(value="loop")
+        ttk.Radiobutton(box, text="内置回环(不需串口)",
+                        variable=self.var_link_mode, value="loop",
+                        command=self._on_link_change).pack(side=tk.LEFT)
+        ttk.Radiobutton(box, text="串口(需串口对另一端)",
+                        variable=self.var_link_mode, value="serial",
+                        command=self._on_link_change).pack(
+            side=tk.LEFT, padx=(12, 0))
+        self.var_master_port = tk.StringVar(value="")
+        self.cmb_master = ttk.Combobox(box, textvariable=self.var_master_port,
+                                       values=[], width=26)
+        self.cmb_master.pack(side=tk.LEFT, padx=8)
+        ttk.Label(box, text="提示: 上位机连 COM4 时本设备监听 COM5",
+                  style="CardMuted.TLabel").pack(side=tk.LEFT, padx=6)
+        self._on_link_change()
 
     def _bench_read(self, parent, col):
         box = ttk.LabelFrame(parent, text="系统参数测量", padding=10)
