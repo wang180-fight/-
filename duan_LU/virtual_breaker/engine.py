@@ -66,6 +66,8 @@ class VirtualDevice(VirtualBreaker):
         self.time_scale = 10.0           # 保护延时加速倍率(教学便于观察)
         self.auto_protect = True         # 保护逻辑总开关
         self.reclose_delay = 8.0         # 自动重合闸延时 s
+        self.allow_remote = True         # 面板"本地/远程"拨钮: False=本地, 拒绝遥控
+
 
         # 教学默认控制字: 让各类保护都处于"可跳闸"状态, 便于课堂演示
         #   控制字3 = 0x6A: 预警投入 / 短路瞬时 / 短路短延时 / 过流 均跳闸
@@ -349,6 +351,21 @@ class VirtualDevice(VirtualBreaker):
             self._audit("event", b"", "工况恢复正常")
             self._simulate(0.0)
 
+    def reset_trip(self):
+        """就地复位: 把脱扣后的手柄按回 OFF 位, 清除脱扣指示。
+
+        只清"跳闸原因", 不改变工况; 若故障仍存在, 合闸后会再次保护跳闸,
+        这与真实断路器按复位按钮后的表现一致。
+        """
+        with self.lock:
+            if self.switch_state or not self.fault_reason:
+                return False
+            self.fault_reason = 0x00
+            self._fault_since.clear()
+            self._audit("event", b"", "就地复位: 脱扣指示清除, 手柄回 OFF 位")
+            return True
+
+
     def _random_behavior(self):
         """随机行为: 数值抖动 / 随机跳闸。"""
         if self.random_mode == "off":
@@ -381,6 +398,14 @@ class VirtualDevice(VirtualBreaker):
         if payload is None:
             return P.build_frame(self.addr, 0xD1, [0x02])
         return P.build_frame(self.addr, 0x91, list(di_wire) + payload)
+
+    def _resp_control(self, data):
+        """本地/远程拨钮在[本地]时拒绝遥控: 回异常应答 DCH + 10H(远程控制失败)。"""
+        if not self.allow_remote:
+            self._audit("event", b"", "拨钮在[本地]: 拒绝远程控制, 回异常 10H")
+            return P.build_frame(self.addr, 0xDC, [0x10])
+        return super()._resp_control(data)
+
 
     # ------------------------------------------------------------------
     # 帧处理(串口线程入口)
@@ -468,6 +493,7 @@ class VirtualDevice(VirtualBreaker):
                 "load_rate": self.load_rate,
                 "running": self.running,
                 "auto_protect": self.auto_protect,
+                "allow_remote": self.allow_remote,
                 "time_scale": self.time_scale,
                 "rx": self.rx_count,
                 "tx": self.tx_count,

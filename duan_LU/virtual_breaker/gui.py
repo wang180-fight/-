@@ -1,14 +1,15 @@
 # -*- coding: utf-8 -*-
-"""虚拟断路器实训软件 —— tkinter 界面。
+"""虚拟断路器设备(从站) —— tkinter 界面。
 
 布局:
-    顶部   标题 + 运行状态灯
+    顶部   标题 + 时钟
     左侧   通讯设置(端口/波特率/数据位/校验/停止位/从站地址/监听)
     右侧   页签
-             1) 综合实训台   系统参数测量 | 系统设备控制 | 模拟测试系统
-             2) 实时监测     三相电气量 / 波形 / 闸位 / 故障注入
-             3) 通信日志     报文表格 + 帧结构分解 + 校验和计算过程
-             4) 协议教学     帧格式 / 控制字位表 / DI 目录 / 状态字位表
+             1) 设备本体     实物面板(手柄/指示灯/液晶/按钮/端子/RS485)+就地操作
+             2) 运行数据     三相电气量 / 波形 / 工况参数
+             3) 指令台(选学) 主站侧组帧、发送、回显、帧分解(无上位机时自测)
+             4) 通信日志     报文表格 + 帧结构分解 + 校验和计算过程
+             5) 协议说明     帧格式 / 控制字位表 / DI 目录 / 状态字位表
 """
 
 import math
@@ -22,9 +23,11 @@ from tkinter import ttk, messagebox
 
 from dl645_breaker import protocol as P
 from dl645_breaker.device import make_operator, make_password
+from dl645_breaker.simulator import REASON_TABLE
 
 from . import teaching as T
 from .engine import FAULT_KINDS, VirtualDevice
+from .panel import TRIP_REASONS, BreakerPanel
 from .station import (LoopbackLink, MasterSerialLink, SlaveServer,
                       available_ports)
 
@@ -95,9 +98,9 @@ def apply_theme(root):
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("虚拟断路器模拟器 —— 电气设备检测与控制实训系统")
-        self.geometry("1300x780")
-        self.minsize(1120, 700)
+        self.title("虚拟断路器 —— DL/T 645 智能塑壳断路器设备仿真")
+        self.geometry("1440x880")
+        self.minsize(1180, 740)
         apply_theme(self)
         self.configure(bg=C_BG)
         self._set_icon()
@@ -111,9 +114,23 @@ class App(tk.Tk):
         self._auto_seq = 0
         self._wave_t = 0.0
 
+        # ---- 设备工况变量(设备面板与运行数据页共用) ----
+        self.var_load = tk.DoubleVar(value=0.35)
+        self.var_time_scale = tk.StringVar(value="10")
+        self.var_auto = tk.BooleanVar(value=True)
+        self.var_run = tk.BooleanVar(value=True)
+        self.var_reclose = tk.StringVar(value="8")
+        self.var_freq = tk.StringVar(value="50")
+        self.var_remote = tk.BooleanVar(value=True)
+        self.var_fault = tk.StringVar(value="正常工况")
+        self.var_fault_phase = tk.StringVar(value="A")
+        self.var_fault_value = tk.StringVar(value="")
+
+
         self._build_header()
         self._build_body()
         self._build_statusbar()
+
 
         self._refresh_ports()
         self.after(120, self._poll_master)
@@ -139,9 +156,10 @@ class App(tk.Tk):
     def _build_header(self):
         bar = ttk.Frame(self, padding=(14, 8, 14, 4))
         bar.pack(side=tk.TOP, fill=tk.X)
-        ttk.Label(bar, text="虚拟断路器模拟器", style="Title.TLabel"
+        ttk.Label(bar, text="虚拟断路器", style="Title.TLabel"
                   ).pack(side=tk.LEFT)
-        ttk.Label(bar, text="DL/T 645 带漏电保护塑壳断路器 · 从站实训设备",
+        ttk.Label(bar, text="DZ20L-250/4300 智能塑壳断路器(带漏电保护) · "
+                            "DL/T 645-2007 从站设备",
                   style="Sub.TLabel").pack(side=tk.LEFT, padx=(12, 0),
                                            pady=(6, 0))
         self.var_clock = tk.StringVar(value=datetime.now().strftime(
@@ -167,30 +185,35 @@ class App(tk.Tk):
         nb.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(8, 0))
         self.nb = nb
 
-        self.tab_bench = ttk.Frame(nb, padding=8)
+        self.tab_device = ttk.Frame(nb, padding=6)
         self.tab_monitor = ttk.Frame(nb, padding=8)
+        self.tab_bench = ttk.Frame(nb, padding=8)
         self.tab_log = ttk.Frame(nb, padding=6)
         self.tab_teach = ttk.Frame(nb, padding=6)
-        nb.add(self.tab_bench, text="综合实训台")
-        nb.add(self.tab_monitor, text="实时监测")
+        nb.add(self.tab_device, text="设备本体")
+        nb.add(self.tab_monitor, text="运行数据")
+        nb.add(self.tab_bench, text="指令台(选学)")
         nb.add(self.tab_log, text="通信日志")
-        nb.add(self.tab_teach, text="协议教学")
+        nb.add(self.tab_teach, text="协议说明")
 
-        self._build_tab_bench()
+        self._build_tab_device()
         self._build_tab_monitor()
+        self._build_tab_bench()
         self._build_tab_log()
         self._build_tab_teach()
+        nb.select(self.tab_device)
+
 
 
     # ------------------------------------------------------------------
     # 左侧: 通讯设置
     # ------------------------------------------------------------------
     def _build_sidebar(self, parent):
-        side = ttk.Frame(parent, width=318)
+        side = ttk.Frame(parent, width=300)
         side.pack(side=tk.LEFT, fill=tk.Y)
         side.pack_propagate(False)
 
-        box = ttk.LabelFrame(side, text="通讯设置(从站)", padding=10)
+        box = ttk.LabelFrame(side, text="设备通信(RS485 从站)", padding=10)
         box.pack(fill=tk.X)
 
         self.var_port = tk.StringVar(value="")
@@ -281,15 +304,15 @@ class App(tk.Tk):
         tip = ttk.LabelFrame(side, text="课堂联调步骤", padding=8)
         tip.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
         tk.Label(tip, justify=tk.LEFT, anchor="nw", bg=C_PANEL,
-                 fg=C_GRAY, font=(self.FONT, 9), wraplength=285,
+                 fg=C_GRAY, font=(self.FONT, 9), wraplength=268,
                  text=("1. 用 com0com 建虚拟串口对, 如 COM4<->COM5;\n"
-                       "2. 本软件监听 COM5, 8E1/9600, 点击[开始监听];\n"
+                       "2. 本设备选 COM5, 8E1/9600, 点击[开始监听];\n"
                        "3. 打开上位机选 COM4 并连接, 即可读实时量、\n"
                        "   远程合分闸、读写参数、读事件记录;\n"
-                       "4. 在[实时监测]注入漏电/过载, 观察上位机\n"
-                       "   告警、跳闸与事件记录;\n"
-                       "5. 在[综合实训台]手工改帧(含校验码), 观察\n"
-                       "   设备丢帧、异常应答或校验失败。")).pack(
+                       "4. 在[设备本体]点故障按钮注入漏电/过载,\n"
+                       "   观察手柄动作、脱扣指示与上位机告警;\n"
+                       "5. 点[手柄]或[合闸/分闸/试验/复位]可就地\n"
+                       "   操作, 与真实断路器一致。")).pack(
             fill=tk.BOTH, expand=True)
         self._on_link_change()
 
@@ -476,6 +499,165 @@ class App(tk.Tk):
 
 
     # ------------------------------------------------------------------
+    # 页签 0: 设备本体
+    # ------------------------------------------------------------------
+    def _build_tab_device(self):
+        f = self.tab_device
+        f.columnconfigure(0, weight=1)
+        f.columnconfigure(1, weight=0)
+        f.rowconfigure(0, weight=1)
+
+        left = ttk.LabelFrame(f, text=" 断路器本体 · 点击手柄或按钮即就地操作 ",
+                              padding=4)
+        left.grid(row=0, column=0, sticky="nsew")
+        left.rowconfigure(0, weight=1)
+        left.columnconfigure(0, weight=1)
+
+        self.panel = BreakerPanel(left, font=self.FONT,
+                                  on_command=self._panel_command)
+        self.panel.grid(row=0, column=0, sticky="nsew")
+
+        # ---- 面板下方的铭牌状态条 ----
+        strip = ttk.Frame(left, style="Card.TFrame", padding=(10, 6))
+        strip.grid(row=1, column=0, sticky="ew", pady=(6, 0))
+        self.var_dev_addr = tk.StringVar(value="000000000001")
+        self.var_dev_link = tk.StringVar(value="未监听")
+        self.var_dev_state = tk.StringVar(value="--")
+        self.var_dev_res = tk.StringVar(value="--")
+        self.var_dev_trip = tk.StringVar(value="0 次")
+        self.var_dev_prot = tk.StringVar(value="投入")
+        cells = (("设备地址", self.var_dev_addr, C_TEXT),
+                 ("通信接口", self.var_dev_link, C_ACCENT),
+                 ("闸位状态", self.var_dev_state, C_GREEN),
+                 ("剩余电流", self.var_dev_res, C_TEXT),
+                 ("累计跳闸", self.var_dev_trip, C_TEXT),
+                 ("保护功能", self.var_dev_prot, C_TEXT))
+        for c, (name, var, color) in enumerate(cells):
+            strip.columnconfigure(c, weight=1, uniform="st")
+            ttk.Label(strip, text=name, style="CardMuted.TLabel",
+                      font=(self.FONT, 8)).grid(row=0, column=c,
+                                                sticky="w", padx=(2, 0))
+            tk.Label(strip, textvariable=var, bg=C_PANEL, fg=color,
+                     font=(self.FONT, 11, "bold"), anchor="w").grid(
+                row=1, column=c, sticky="w", padx=(2, 0))
+
+        # ---- 右侧操作栏 ----
+        right = ttk.Frame(f, width=344)
+        right.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
+        right.grid_propagate(False)
+        self._build_device_ops(right)
+
+    def _build_device_ops(self, parent):
+        op = ttk.LabelFrame(parent, text="就地操作", padding=8)
+        op.pack(fill=tk.X)
+        op.columnconfigure(0, weight=1, uniform="op")
+        op.columnconfigure(1, weight=1, uniform="op")
+        ttk.Button(op, text="合闸 (I)",
+                   command=lambda: self._panel_command("close")).grid(
+            row=0, column=0, sticky="ew", padx=(0, 4), pady=2)
+        ttk.Button(op, text="分闸 (O)", style="Danger.TButton",
+                   command=lambda: self._panel_command("open")).grid(
+            row=0, column=1, sticky="ew", padx=(4, 0), pady=2)
+        ttk.Button(op, text="试验 (T)", style="Secondary.TButton",
+                   command=lambda: self._panel_command("test")).grid(
+            row=1, column=0, sticky="ew", padx=(0, 4), pady=2)
+        ttk.Button(op, text="复位 (R)", style="Secondary.TButton",
+                   command=lambda: self._panel_command("reset")).grid(
+            row=1, column=1, sticky="ew", padx=(4, 0), pady=2)
+        ttk.Checkbutton(op, text="允许上位机远程控制(拨钮在[远程])",
+                        variable=self.var_remote,
+                        command=self._on_remote_toggle).grid(
+            row=2, column=0, columnspan=2, sticky="w", pady=(6, 0))
+
+        fault = ttk.LabelFrame(parent, text="模拟故障(注入工况)", padding=8)
+        fault.pack(fill=tk.X, pady=(8, 0))
+        fault.columnconfigure(0, weight=1, uniform="fl")
+        fault.columnconfigure(1, weight=1, uniform="fl")
+        kinds = [(k, n) for k, n in FAULT_KINDS if k != "none"]
+        for i, (kind, name) in enumerate(kinds):
+            ttk.Button(fault, text=name, style="Secondary.TButton",
+                       command=lambda k=kind: self._inject_kind(k)).grid(
+                row=i // 2, column=i % 2, sticky="ew", padx=2, pady=2)
+        ttk.Label(fault, text="漏电值(mA, 留空按额定值):",
+                  style="CardMuted.TLabel").grid(
+            row=4, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        ttk.Entry(fault, textvariable=self.var_fault_value).grid(
+            row=5, column=0, columnspan=2, sticky="ew", pady=(2, 0))
+        ttk.Button(fault, text="恢复正常工况",
+                   command=self._clear_fault).grid(
+            row=6, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+
+        sim = ttk.LabelFrame(parent, text="负荷与保护整定", padding=8)
+        sim.pack(fill=tk.X, pady=(8, 0))
+        sim.columnconfigure(1, weight=1)
+        ttk.Label(sim, text="负荷率", style="Card.TLabel").grid(
+            row=0, column=0, sticky="w")
+        tk.Scale(sim, from_=0.05, to=1.2, resolution=0.05,
+                 orient=tk.HORIZONTAL, variable=self.var_load,
+                 showvalue=True, length=150, bg=C_PANEL,
+                 highlightthickness=0).grid(row=0, column=1, sticky="ew")
+        ttk.Label(sim, text="保护加速", style="Card.TLabel").grid(
+            row=1, column=0, sticky="w")
+        tk.Spinbox(sim, from_=1, to=60, width=6,
+                   textvariable=self.var_time_scale, relief="solid",
+                   bd=1).grid(row=1, column=1, sticky="w", pady=2)
+        ttk.Label(sim, text="重合闸延时", style="Card.TLabel").grid(
+            row=2, column=0, sticky="w")
+        tk.Spinbox(sim, from_=1, to=120, width=6,
+                   textvariable=self.var_reclose, relief="solid",
+                   bd=1).grid(row=2, column=1, sticky="w", pady=2)
+        ttk.Checkbutton(sim, text="投入保护逻辑", variable=self.var_auto).grid(
+            row=3, column=0, columnspan=2, sticky="w")
+        ttk.Checkbutton(sim, text="设备带电运行", variable=self.var_run).grid(
+            row=4, column=0, columnspan=2, sticky="w")
+
+    # ---- 面板点击 / 故障按钮 ----
+    def _panel_command(self, name):
+        if name == "remote":
+            self.var_remote.set(not self.var_remote.get())
+            self._on_remote_toggle()
+            return
+        if name == "reset":
+            ok = self.device.reset_trip()
+            self._refresh_device_view()
+            self.var_status.set("复位: %s" % ("脱扣指示已清除, 可重新合闸"
+                                             if ok else "当前无需复位"))
+            return
+        if name == "handle":
+            with self.device.lock:
+                closed = bool(self.device.switch_state)
+                reason = self.device.fault_reason & 0x1F
+            if not closed and reason in TRIP_REASONS:
+                self.var_status.set("设备处于脱扣位置: 请先按 [R] 复位, "
+                                    "再合闸(与实际断路器一致)")
+                return
+            self._local_control("trip" if closed else "close")
+            return
+        self._local_control({"close": "close", "open": "trip",
+                             "trip": "trip", "test": "test"}.get(name, name))
+
+    def _inject_kind(self, kind):
+        value = None
+        text = self.var_fault_value.get().strip()
+        if text:
+            try:
+                value = float(text)
+            except ValueError:
+                messagebox.showwarning("数值无效", "漏电值请输入数字(mA)。")
+                return
+        self.var_fault.set(dict((k, n) for k, n in FAULT_KINDS)
+                           .get(kind, "正常工况"))
+        self.device.inject(kind, value, self.var_fault_phase.get())
+        self.var_status.set("已注入工况: %s" % self.var_fault.get())
+
+    def _on_remote_toggle(self):
+        self.device.allow_remote = bool(self.var_remote.get())
+        self.var_status.set("远程控制: %s" %
+                            ("允许(拨钮在远程)" if self.device.allow_remote
+                             else "禁止(拨钮在本地, 上位机遥控将回异常 10H)"))
+        self._refresh_device_view()
+
+    # ------------------------------------------------------------------
     # 页签 1: 综合实训台
     # ------------------------------------------------------------------
     def _build_tab_bench(self):
@@ -544,7 +726,6 @@ class App(tk.Tk):
 
         self.var_addr_ctrl = tk.StringVar(value="000000000001")
         self.var_param_ctrl = tk.StringVar(value=T.di_choices("control")[0])
-        self.var_freq = tk.StringVar(value="50")
         self.var_delay = tk.StringVar(value="0")
         self.var_delay_unit = tk.StringVar(value="立即")
         self.var_write_value = tk.StringVar(value="")
@@ -882,9 +1063,6 @@ class App(tk.Tk):
             row=1, column=0, sticky=tk.W, pady=(8, 0))
         inj = ttk.Frame(ctrl, style="Card.TFrame")
         inj.grid(row=1, column=1, sticky="ew", pady=(8, 0))
-        self.var_fault = tk.StringVar(value="正常工况")
-        self.var_fault_phase = tk.StringVar(value="A")
-        self.var_fault_value = tk.StringVar(value="")
         ttk.Combobox(inj, textvariable=self.var_fault, width=18,
                      values=[n for _, n in FAULT_KINDS],
                      state="readonly").pack(side=tk.LEFT)
@@ -905,28 +1083,23 @@ class App(tk.Tk):
         sim.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(10, 0))
         sim.columnconfigure(1, weight=1)
 
-        self.var_load = tk.DoubleVar(value=0.35)
         ttk.Label(sim, text="负荷率", style="Card.TLabel").grid(
             row=0, column=0, sticky=tk.W)
         tk.Scale(sim, from_=0.05, to=1.2, resolution=0.05,
                  orient=tk.HORIZONTAL, variable=self.var_load, showvalue=True,
                  length=180, bg=C_PANEL, highlightthickness=0).grid(
             row=0, column=1, sticky="ew")
-        self.var_time_scale = tk.StringVar(value="10")
         ttk.Label(sim, text="保护时间加速", style="Card.TLabel").grid(
             row=1, column=0, sticky=tk.W)
         tk.Spinbox(sim, from_=1, to=60, width=6,
                    textvariable=self.var_time_scale, relief="solid",
                    bd=1).grid(row=1, column=1, sticky="w", pady=2)
-        self.var_auto = tk.BooleanVar(value=True)
         ttk.Checkbutton(sim, text="启用保护逻辑(漏电/过载/过压/缺相自动跳闸)",
                         variable=self.var_auto).grid(
             row=2, column=0, columnspan=2, sticky="w")
-        self.var_run = tk.BooleanVar(value=True)
         ttk.Checkbutton(sim, text="设备运行(取消=停电, 电压电流为 0)",
                         variable=self.var_run).grid(
             row=3, column=0, columnspan=2, sticky="w")
-        self.var_reclose = tk.StringVar(value="8")
         ttk.Label(sim, text="重合闸延时(s)", style="Card.TLabel").grid(
             row=4, column=0, sticky=tk.W)
         tk.Spinbox(sim, from_=1, to=120, width=6,
@@ -1213,6 +1386,7 @@ class App(tk.Tk):
         try:
             self.device.running = bool(self.var_run.get())
             self.device.auto_protect = bool(self.var_auto.get())
+            self.device.allow_remote = bool(self.var_remote.get())
             self.device.load_rate = max(float(self.var_load.get()), 0.01)
             self.device.time_scale = max(
                 float(self.var_time_scale.get() or 10), 1.0)
@@ -1232,6 +1406,26 @@ class App(tk.Tk):
     def _apply_snapshot(self, s):
         self._last_snap = s
         v3, i3 = s["v3"], s["i3"]
+        listening = bool(self.server is not None and self.server.is_open)
+        self.panel.set_state(s, listening=listening,
+                             link_text=self.var_link_text.get())
+        self.var_dev_addr.set(s["addr"])
+        if listening:
+            self.var_dev_link.set("%s 监听中" % self.server.port)
+        else:
+            self.var_dev_link.set("未连接上位机")
+        reason = s["reason"] & 0x1F
+        if s["switch"]:
+            self.var_dev_state.set("合闸 ON")
+        elif reason in TRIP_REASONS:
+            self.var_dev_state.set("脱扣 · %s"
+                                   % REASON_TABLE.get(reason, "%02XH" % reason))
+        else:
+            self.var_dev_state.set("分闸 OFF")
+        self.var_dev_res.set("%.0f mA / 额定 %d mA"
+                             % (s["residual"], s["rated_res"]))
+        self.var_dev_trip.set("%d 次" % s.get("trip_total", 0))
+        self.var_dev_prot.set("投入" if s.get("auto_protect", True) else "退出")
         for key, text in (("v_a", "%.1f" % v3[0]), ("v_b", "%.1f" % v3[1]),
                           ("v_c", "%.1f" % v3[2]),
                           ("i_a", "%.2f" % i3[0]), ("i_b", "%.2f" % i3[1]),
