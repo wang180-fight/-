@@ -500,8 +500,8 @@ class App(tk.Tk):
         return ttk.LabelFrame(parent, text=" %s " % title, padding=8)
 
     def _build_values_card(self, parent):
-        """实时电气量卡片: 加大字号 + 每行浅灰底条(标签/数值/单位同一底块),
-        底部说明块用淡蓝底并铺满剩余空间。"""
+        """实时电气量卡片: 左侧标签白底无背景, 仅"数值 / 单位"单元格
+        用浅灰底块(等宽、块间留白), 底部说明块用淡蓝底并铺满剩余空间。"""
         box = self._card(parent, "实时电气量")
         box.grid(row=0, column=0, sticky="nsew")
         box.columnconfigure(0, weight=1)
@@ -516,39 +516,39 @@ class App(tk.Tk):
             ("运行状态字1", "", 1),
             ("运行状态字2", "", 1),
         ]
-        ROW_BG = "#f1f5f9"
-        f_key = (self.FONT, 11, "bold")
+        CELL_BG = "#f1f5f9"        # 仅数值/单位单元格的浅灰底
+        COL_GAP = 12               # 单元格之间的白隙
+        ROW_GAP = 5                # 行间距
+        f_key = (self.FONT, 11)
         f_val = (self.FONT, 12, "bold")
         f_unit = (self.FONT, 10)
         for gr, (title, unit, n) in enumerate(rows):
-            rowf = tk.Frame(box, bg=ROW_BG)
-            rowf.grid(row=gr, column=0, sticky="ew", pady=(0, 2))
+            rowf = tk.Frame(box, bg=C_PANEL)          # 行背景与卡片同色(白)
+            rowf.grid(row=gr, column=0, sticky="ew", pady=(0, ROW_GAP))
             rowf.columnconfigure(0, minsize=112)
-            for c in range(1, 4):
-                rowf.columnconfigure(c, weight=1)
-            rowf.columnconfigure(4, minsize=96)
-            tk.Label(rowf, text=title, bg=ROW_BG, fg=C_ACCENT2,
+            for c in range(1, 5):                     # 数值/单位列等宽
+                rowf.columnconfigure(c, weight=1, uniform="val")
+            tk.Label(rowf, text=title, bg=C_PANEL, fg=C_TEXT,
                      font=f_key, anchor=tk.W, padx=10).grid(
-                row=0, column=0, sticky=tk.W, pady=3)
-            span = 3 if title.startswith("运行状态字") else 1
+                row=0, column=0, sticky=tk.W)
             for c in range(n):
                 var = tk.StringVar(value="--")
                 self.lb[(title, c)] = var
-                lbl = tk.Label(rowf, textvariable=var, bg=ROW_BG, fg=C_TEXT,
-                               font=f_val, anchor=tk.W, padx=4)
-                lbl.grid(row=0, column=1 + c, columnspan=span,
-                         sticky=tk.W, pady=3)
+                lbl = tk.Label(rowf, textvariable=var, bg=CELL_BG, fg=C_TEXT,
+                               font=f_val, anchor=tk.W, padx=10, pady=2)
+                lbl.grid(row=0, column=1 + c, sticky="ew", padx=(0, COL_GAP))
                 self.lb_w[(title, c)] = lbl
-            tk.Label(rowf, text=unit, bg=ROW_BG, fg=C_MUTED,
-                     font=f_unit, anchor=tk.W, padx=8).grid(
-                row=0, column=4, sticky=tk.W)
+            if unit:
+                tk.Label(rowf, text=unit, bg=CELL_BG, fg=C_MUTED,
+                         font=f_unit, anchor=tk.W, padx=10, pady=2).grid(
+                    row=0, column=1 + n, sticky=tk.W)
 
         note = tk.Label(
             box, bg="#eef2ff", fg=C_GRAY, justify=tk.LEFT, anchor=tk.NW,
-            font=(self.FONT, 9), padx=12, pady=8, wraplength=820,
-            text=("状态字1: bit6-5=闸位(00分/01合), bit4-0=跳闸原因"
-                  "(遥控/试验类按正常分闸显示); 额定值由控制字4档位决定。\n"
-                  "剩余电流: 寄存器0290FF00(最大相及剩余电流值)。"))
+            font=(self.FONT, 9), padx=12, pady=6, wraplength=820,
+            text=("状态字1: bit6-5=闸位(00分/01合), bit4-0=跳闸原因;"
+                  " 额定值由控制字4档位决定。\n"
+                  "剩余电流: 寄存器 0290FF00(最大相及剩余电流值)。"))
         note.grid(row=len(rows), column=0, sticky="nsew", pady=(2, 0))
         box.rowconfigure(len(rows), weight=1)
 

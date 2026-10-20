@@ -41,6 +41,7 @@ _commit_msg.txt
 _verify_layout.py
 _verify_trip.py
 _verify_ui.py
+_shot_ui.py
 _ui_shot*.png
 _gui_numbered.txt
 
