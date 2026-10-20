@@ -30,6 +30,7 @@ _shot_*.png
 _out.txt
 _out*.txt
 _chk*.txt
+_v*.txt
 _fin*.txt
 _head.txt
 _push*.log

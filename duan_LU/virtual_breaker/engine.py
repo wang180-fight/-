@@ -411,6 +411,8 @@ class VirtualDevice(VirtualBreaker):
                 self._audit("rx", raw, "地址不符(本机 %s), 不应答"
                             % P.decode_addr(self.addr))
                 return b""
+            self._audit("rx", raw, "收到请求: C=%02XH, 数据域 %d 字节"
+                        % (f["control"], f["length"]))
             resp = self._dispatch(f)
             if self.link.get("bad_cs", 0.0) > 0 and resp \
                     and self._rand.random() < self.link["bad_cs"]:

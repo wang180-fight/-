@@ -1013,7 +1013,7 @@ class App(tk.Tk):
         top.columnconfigure(0, weight=1)
         cols = ("time", "dir", "addr", "ctrl", "len", "data", "note")
         heads = ("时间", "方向", "地址", "控制码", "L", "整帧(HEX)", "说明")
-        widths = (96, 44, 96, 130, 36, 300, 220)
+        widths = (96, 44, 132, 130, 36, 300, 220)
         self.tree_log = ttk.Treeview(top, columns=cols, show="headings",
                                      height=12)
         for c, h, w in zip(cols, heads, widths):
