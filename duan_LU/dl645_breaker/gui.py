@@ -519,7 +519,7 @@ class App(tk.Tk):
         CELL_BG = "#f1f5f9"        # 仅数值/单位单元格的浅灰底
         COL_GAP = 12               # 单元格之间的白隙
         ROW_GAP = 5                # 行间距
-        f_key = (self.FONT, 11)
+        f_key = (self.FONT, 11, "bold")
         f_val = (self.FONT, 12, "bold")
         f_unit = (self.FONT, 10)
         for gr, (title, unit, n) in enumerate(rows):
@@ -549,8 +549,7 @@ class App(tk.Tk):
             text=("状态字1: bit6-5=闸位(00分/01合), bit4-0=跳闸原因;"
                   " 额定值由控制字4档位决定。\n"
                   "剩余电流: 寄存器 0290FF00(最大相及剩余电流值)。"))
-        note.grid(row=len(rows), column=0, sticky="nsew", pady=(2, 0))
-        box.rowconfigure(len(rows), weight=1)
+        note.grid(row=len(rows), column=0, sticky="ew", pady=(2, 0))
 
         def _fit_note(event):
             note.configure(wraplength=max(320, event.width - 28))
