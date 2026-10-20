@@ -1,0 +1,33 @@
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+env/
+
+# ---------- PyInstaller 打包中间产物 ----------
+build/
+dist/
+*.manifest
+*.toc
+
+# ---------- 编辑器 / 系统 ----------
+.vscode/
+.idea/
+.continue/
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# ---------- 备份 / 临时文件 ----------
+*.bak
+*.orig
+*.tmp
+*.log
+_shot_*.png
+_out.txt
+_out*.txt
+_verify_layout.py
+_gui_numbered.txt
