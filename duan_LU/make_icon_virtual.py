@@ -5,12 +5,13 @@
 一眼可与上位机那张真机照片图标区分。
 """
 import os
+import struct
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 SS = 1024                      # 超采样画布
-TEAL_TOP = (20, 184, 166)
-TEAL_BOT = (11, 79, 74)
+TEAL_TOP = (45, 212, 191)
+TEAL_BOT = (13, 148, 136)
 TEAL = (15, 118, 110)
 DARK = (30, 41, 59)
 BODY = (248, 250, 252)
@@ -99,19 +100,64 @@ def draw_icon():
     return base
 
 
+def _dib_frame(img):
+    """把一帧 RGBA 图编码成 ICO 内嵌的 BMP(DIB) 数据。
+
+    Windows 资源管理器对 16~128px 的 DIB 帧兼容性最好(部分版本读 PNG 帧会回落成
+    默认图标), 因此只有 256px 用 PNG, 其余全部用 32bpp BGRA + AND 掩码。
+    """
+    w, h = img.size
+    px = img.convert("RGBA").tobytes()
+    hdr = struct.pack("<IiiHHIIiiII", 40, w, h * 2, 1, 32, 0,
+                      w * h * 4, 0, 0, 0, 0)
+    rows = []
+    for y in range(h - 1, -1, -1):                     # 自下而上存
+        row = px[y * w * 4:(y + 1) * w * 4]
+        bgra = bytearray(len(row))
+        bgra[0::4], bgra[1::4], bgra[2::4], bgra[3::4] = (
+            row[2::4], row[1::4], row[0::4], row[3::4])
+        rows.append(bytes(bgra))
+    # AND 掩码: 每行按 4 字节对齐, 全 0(透明度交给 alpha 通道)
+    mask_row = ((w + 31) // 32) * 4
+    mask = b"\x00" * (mask_row * h)
+    return hdr + b"".join(rows) + mask
+
+
+def _png_frame(img):
+    from io import BytesIO
+    buf = BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    return buf.getvalue()
+
+
+def write_ico(path, frames):
+    """frames: [(size, PIL.Image)] -> 标准 ICO(≤128 用 DIB, 256 用 PNG)。"""
+    blobs = []
+    for size, img in frames:
+        blobs.append(_dib_frame(img) if size < 256 else _png_frame(img))
+    offset = 6 + 16 * len(frames)
+    dirs, body = [], []
+    for (size, _), blob in zip(frames, blobs):
+        dirs.append(struct.pack("<BBBBHHII", size % 256, size % 256, 0, 0,
+                                1, 32, len(blob), offset))
+        body.append(blob)
+        offset += len(blob)
+    with open(path, "wb") as f:
+        f.write(struct.pack("<HHH", 0, 1, len(frames)))
+        f.write(b"".join(dirs))
+        f.write(b"".join(body))
+
+
 def main():
     icon = draw_icon()
     here = os.path.dirname(os.path.abspath(__file__))
     out = os.path.join(here, "app_virtual.ico")
-    sizes = [(16, 16), (24, 24), (32, 32), (48, 48), (64, 64),
-             (128, 128), (256, 256)]
-    frames = [icon.resize(s, Image.LANCZOS) for s in sizes]
-    frames[-1].save(out, format="ICO",
-                    sizes=[f.size for f in frames])
-    frames[-1].resize((256, 256), Image.LANCZOS).save(
-        os.path.join(here, "_icon_virtual_preview.png"))
+    sizes = (16, 24, 32, 48, 64, 128, 256)
+    frames = [(s, icon.resize((s, s), Image.LANCZOS)) for s in sizes]
+    write_ico(out, frames)
+    frames[-1][1].save(os.path.join(here, "_icon_virtual_preview.png"))
     print("saved", out, os.path.getsize(out), "bytes",
-          [f.size for f in frames])
+          [s for s, _ in frames])
 
 
 if __name__ == "__main__":
