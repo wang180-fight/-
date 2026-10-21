@@ -217,18 +217,34 @@ class App(tk.Tk):
         self.var_slave_addr = tk.StringVar(value="000000000001")
         self.port_map = {}
 
-        def lab(text, pad=(8, 2)):
+        # ---- 右端先占位: 联调步骤 / 收帧统计 / 状态文字 / 运行状态灯 ----
+        ttk.Button(bar, text="联调步骤", style="Secondary.TButton",
+                   command=self._show_steps).pack(side=tk.RIGHT, padx=(6, 0))
+        self.var_rx = tk.StringVar(value="收帧 0 / 应答 0")
+        ttk.Label(bar, textvariable=self.var_rx, style="Sub.TLabel").pack(
+            side=tk.RIGHT, padx=(10, 4))
+        self.var_link_text = tk.StringVar(value="未监听")
+        ttk.Label(bar, textvariable=self.var_link_text,
+                  style="Card.TLabel").pack(side=tk.RIGHT, padx=(8, 0))
+        self.lamp = tk.Canvas(bar, width=14, height=14, highlightthickness=0,
+                              bg=C_PANEL)
+        self.lamp.pack(side=tk.RIGHT, padx=(4, 0))
+        self._lamp_id = self.lamp.create_oval(2, 2, 12, 12, fill="#cbd5e1",
+                                              outline="")
+
+        # ---- 左端: 串口参数与监听按钮 ----
+        def lab(text, pad=(6, 2)):
             ttk.Label(bar, text=text, style="Card.TLabel").pack(
                 side=tk.LEFT, padx=pad)
 
         lab("端口号:", (2, 2))
-        self.cmb_port = ttk.Combobox(bar, textvariable=self.var_port, width=24)
+        self.cmb_port = ttk.Combobox(bar, textvariable=self.var_port, width=15)
         self.cmb_port.pack(side=tk.LEFT)
         ttk.Button(bar, text="刷新", style="Secondary.TButton",
                    command=self._refresh_ports).pack(side=tk.LEFT, padx=4)
-        lab("从站地址:")
+        lab("地址:")
         ttk.Entry(bar, textvariable=self.var_slave_addr,
-                  width=13).pack(side=tk.LEFT)
+                  width=12).pack(side=tk.LEFT)
         lab("波特率:")
         ttk.Combobox(bar, textvariable=self.var_baud, width=6,
                      values=["1200", "2400", "4800", "9600", "19200",
@@ -245,26 +261,12 @@ class App(tk.Tk):
 
         self.btn_listen = ttk.Button(bar, text="开始监听",
                                      command=self._start_server)
-        self.btn_listen.pack(side=tk.LEFT, padx=(12, 4))
+        self.btn_listen.pack(side=tk.LEFT, padx=(10, 4))
         self.btn_stop = ttk.Button(bar, text="停止", style="Secondary.TButton",
                                    command=self._stop_server,
                                    state=tk.DISABLED)
         self.btn_stop.pack(side=tk.LEFT)
 
-        # ---- 右侧: 联调步骤 / 收帧统计 / 运行状态灯 ----
-        ttk.Button(bar, text="联调步骤", style="Secondary.TButton",
-                   command=self._show_steps).pack(side=tk.RIGHT, padx=(6, 0))
-        self.var_rx = tk.StringVar(value="收帧 0 · 应答 0")
-        ttk.Label(bar, textvariable=self.var_rx, style="Sub.TLabel").pack(
-            side=tk.RIGHT, padx=(10, 6))
-        self.var_link_text = tk.StringVar(value="未监听")
-        ttk.Label(bar, textvariable=self.var_link_text,
-                  style="Card.TLabel").pack(side=tk.RIGHT, padx=(8, 0))
-        self.lamp = tk.Canvas(bar, width=14, height=14, highlightthickness=0,
-                              bg=C_PANEL)
-        self.lamp.pack(side=tk.RIGHT, padx=(4, 0))
-        self._lamp_id = self.lamp.create_oval(2, 2, 12, 12, fill="#cbd5e1",
-                                              outline="")
 
     def _show_steps(self):
         win = tk.Toplevel(self)
@@ -1434,8 +1436,7 @@ class App(tk.Tk):
             self.lbl_seat.configure(text="合  闸", bg=C_GREEN)
         else:
             self.lbl_seat.configure(text="分  闸", bg=C_RED)
-        self.var_rx.set("收帧 %d · 应答 %d · 校验错 %d · 丢帧 %d"
-                        % (s["rx"], s["tx"], s["cs_err"], s["drop"]))
+        self.var_rx.set("收帧 %d / 应答 %d" % (s["rx"], s["tx"]))
         self.var_stats.set("收帧 %d / 应答 %d / 校验错 %d / 丢弃 %d"
                            % (s["rx"], s["tx"], s["cs_err"], s["drop"]))
 
