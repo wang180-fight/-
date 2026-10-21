@@ -7,9 +7,10 @@
     页签
              1) 设备本体     实物面板(手柄/指示灯/液晶/按钮/端子/RS485)+就地操作
              2) 运行数据     三相电气量 / 波形 / 工况参数
-             3) 指令台(选学) 主站侧组帧、发送、回显、帧分解(无上位机时自测)
-             4) 通信日志     报文表格 + 帧结构分解 + 校验和计算过程
-             5) 协议说明     帧格式 / 控制字位表 / DI 目录 / 状态字位表
+             3) 通信日志     报文表格 + 帧结构分解 + 校验和计算过程
+             4) 协议说明     帧格式 / 控制字位表 / DI 目录 / 状态字位表
+             5) 协议自测(主站) 本机临时扮演主站组帧/发送/解析
+                            注意: 从站设备不会主动发读命令, 该页仅用于无上位机时自测
 """
 
 import math
@@ -192,15 +193,15 @@ class App(tk.Tk):
         self.tab_teach = ttk.Frame(nb, padding=6)
         nb.add(self.tab_device, text="设备本体")
         nb.add(self.tab_monitor, text="运行数据")
-        nb.add(self.tab_bench, text="指令台(选学)")
         nb.add(self.tab_log, text="通信日志")
         nb.add(self.tab_teach, text="协议说明")
+        nb.add(self.tab_bench, text="协议自测(主站)")
 
         self._build_tab_device()
         self._build_tab_monitor()
-        self._build_tab_bench()
         self._build_tab_log()
         self._build_tab_teach()
+        self._build_tab_bench()
         nb.select(self.tab_device)
 
 
@@ -275,7 +276,8 @@ class App(tk.Tk):
         win.transient(self)
         tk.Label(win, justify=tk.LEFT, anchor="nw", bg=C_PANEL, fg=C_TEXT,
                  font=(self.FONT, 10), padx=18, pady=16,
-                 text=("1. 用 com0com 建一对虚拟串口, 如 COM4 <-> COM5;\n"
+                 text=("本机是【从站】: 只应答上位机请求, 不会主动发读/控命令。\n"
+                       "1. 用 com0com 建一对虚拟串口, 如 COM4 <-> COM5;\n"
                        "2. 本设备选 COM5, 9600/8E1, 点[开始监听];\n"
                        "3. 上位机选 COM4 并[连接设备](串口模式);\n"
                        "4. 上位机读实时量、遥控分合闸、读写参数、读事件;\n"
@@ -630,23 +632,33 @@ class App(tk.Tk):
         self._refresh_device_view()
 
     # ------------------------------------------------------------------
-    # 页签 3: 指令台(选学, 无上位机时自测)
+    # 页签 5: 协议自测(主站, 无上位机时自测; 不是从站设备的行为)
     # ------------------------------------------------------------------
     def _build_tab_bench(self):
         f = self.tab_bench
         for c in range(3):
             f.columnconfigure(c, weight=1, uniform="col")
-        f.rowconfigure(0, weight=1)
+        f.rowconfigure(2, weight=1)
+
+        # ---- 角色说明条: 强调本页不是从站设备的行为 ----
+        tk.Label(f, justify=tk.LEFT, anchor="w", bg="#fef3c7", fg="#92400e",
+                 font=(self.FONT, 9), padx=10, pady=6, wraplength=1180,
+                 text=("本页不是断路器(从站)的行为。断路器只做一件事: 收到主站"
+                       "请求就应答, 永远不会主动发读数据/遥控命令。\n"
+                       "这一页是在本机临时扮演【上位机(主站)】, 把组好的请求帧"
+                       "交给同一台虚拟设备处理, 便于没有上位机时练习组帧、校验和解析。")
+                 ).grid(row=0, column=0, columnspan=3, sticky="ew")
+
+        self._bench_link(f)
         self._bench_read(f, 0)
         self._bench_ctrl(f, 1)
         self._bench_test(f, 2)
-        self._bench_link(f)
 
     def _bench_link(self, parent):
-        """指令台底部的自测链路: 内置回环(无需串口) 或 另一对串口。"""
-        box = ttk.LabelFrame(parent, text="调试主站链路(本机自测用, 与设备通信无关)",
-                             padding=8)
-        box.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(8, 0))
+        """自测链路(主站侧发送通道): 内置回环(无需串口) 或 另一对串口。"""
+        box = ttk.LabelFrame(parent, text="本页的发送通道(本机主站用, 与从站通信无关)",
+                             padding=6)
+        box.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(6, 6))
         self.var_link_mode = tk.StringVar(value="loop")
         ttk.Radiobutton(box, text="内置回环(不需串口)",
                         variable=self.var_link_mode, value="loop",
@@ -664,15 +676,16 @@ class App(tk.Tk):
         self._on_link_change()
 
     def _bench_read(self, parent, col):
-        box = ttk.LabelFrame(parent, text="系统参数测量", padding=10)
-        box.grid(row=0, column=col, sticky="nsew", padx=(0, 8))
+        box = ttk.LabelFrame(parent, text="① 读数据(主站 → 设备)",
+                             padding=10)
+        box.grid(row=2, column=col, sticky="nsew", padx=(0, 8))
         box.columnconfigure(1, weight=1)
 
         self.var_addr_read = tk.StringVar(value="000000000001")
         self.var_param_read = tk.StringVar(value=T.di_choices("read")[0])
         self.var_cmd_read = tk.StringVar(value="")
 
-        ttk.Label(box, text="选择设备:", style="Card.TLabel").grid(
+        ttk.Label(box, text="目标设备:", style="Card.TLabel").grid(
             row=0, column=0, sticky=tk.W, pady=4)
         ttk.Combobox(box, textvariable=self.var_addr_read,
                      values=["000000000001"], width=16).grid(
@@ -704,8 +717,8 @@ class App(tk.Tk):
         self.txt_parse_read = self._text(box, 7)
         self.txt_parse_read.grid(row=9, column=0, columnspan=2, sticky="nsew")
         box.rowconfigure(9, weight=1)
-        self._bench_note(box, 10, "读数据控制码 11H：DATA=DI0..DI3；\n"
-                                  "应答 91H：DATA=DI0..DI3+数据。")
+        self._bench_note(box, 10, "本机以【主站】身份发出 11H 读请求：DATA=DI0..DI3；\n"
+                                  "设备以 91H 应答：DATA=DI0..DI3+数据。")
 
     def _text(self, parent, rows):
         return tk.Text(parent, height=rows, width=16, wrap=tk.WORD,
@@ -714,8 +727,9 @@ class App(tk.Tk):
 
 
     def _bench_ctrl(self, parent, col):
-        box = ttk.LabelFrame(parent, text="系统设备控制", padding=10)
-        box.grid(row=0, column=col, sticky="nsew", padx=(0, 8))
+        box = ttk.LabelFrame(parent, text="② 写参数 / 遥控(主站 → 设备)",
+                             padding=10)
+        box.grid(row=2, column=col, sticky="nsew", padx=(0, 8))
         box.columnconfigure(1, weight=1)
 
         self.var_addr_ctrl = tk.StringVar(value="000000000001")
@@ -725,7 +739,7 @@ class App(tk.Tk):
         self.var_write_value = tk.StringVar(value="")
         self.var_cmd_ctrl = tk.StringVar(value="")
 
-        ttk.Label(box, text="选择设备:", style="Card.TLabel").grid(
+        ttk.Label(box, text="目标设备:", style="Card.TLabel").grid(
             row=0, column=0, sticky=tk.W, pady=4)
         ttk.Combobox(box, textvariable=self.var_addr_ctrl,
                      values=["000000000001"], width=16).grid(
@@ -795,8 +809,8 @@ class App(tk.Tk):
 
 
     def _bench_test(self, parent, col):
-        box = ttk.LabelFrame(parent, text="模拟测试系统", padding=10)
-        box.grid(row=0, column=col, sticky="nsew")
+        box = ttk.LabelFrame(parent, text="③ 观测与压力测试", padding=10)
+        box.grid(row=2, column=col, sticky="nsew")
         box.columnconfigure(0, weight=1)
 
         btns = ttk.Frame(box, style="Card.TFrame")
