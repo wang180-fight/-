@@ -101,6 +101,10 @@ python -m PyInstaller --noconfirm --clean 虚拟断路器模拟器.spec
 ```
 产物：`dist\虚拟断路器模拟器.exe`（单文件、无控制台）。
 
+> 图标：模拟器使用专用图标 `app_virtual.ico`（青绿底 + 白色设备 + 显示器标记 + SIM），
+> 与上位机 `低压塑壳断路器远程控制软件.exe` 的 `app.ico`（真机照片）不同，
+> 任务栏/桌面一眼可分。图标由 `make_icon_virtual.py` 生成，改样式可直接改脚本重跑。
+
 ---
 
 ## 四、与上位机联调（推荐课堂流程）
@@ -181,6 +185,8 @@ CS ：从第一个 68H 到 CS 前一字节求和 mod 256
 duan_LU/
 ├─ virtual_main.py              虚拟断路器入口
 ├─ 虚拟断路器模拟器.spec        PyInstaller 配置
+├─ app_virtual.ico              模拟器专用图标(区别于上位机的 app.ico)
+├─ make_icon_virtual.py         图标生成脚本(Pillow 绘制, 可改样式重跑)
 ├─ start_virtual.bat
 ├─ virtual_breaker/
 │  ├─ panel.py                  设备实物面板(外壳/手柄/指示灯/按钮/端子/RS485)

@@ -5,7 +5,7 @@ a = Analysis(
     ['virtual_main.py'],
     pathex=[],
     binaries=[],
-    datas=[('app.ico', '.')],
+    datas=[('app_virtual.ico', '.')],
     hiddenimports=['serial', 'serial.tools.list_ports', 'serial.tools.list_ports_common', 'serial.tools.list_ports_windows', 'serial.serialwin32'],
     hookspath=[],
     hooksconfig={},
@@ -35,5 +35,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['app.ico'],
+    icon=['app_virtual.ico'],
 )

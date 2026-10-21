@@ -143,12 +143,14 @@ class App(tk.Tk):
     # 窗口基础
     # ------------------------------------------------------------------
     def _set_icon(self):
+        """窗口/任务栏图标: 模拟器专用 app_virtual.ico(与上位机的 app.ico 区分)。"""
         try:
             if getattr(sys, "frozen", False):
-                ico = os.path.join(getattr(sys, "_MEIPASS", ""), "app.ico")
+                ico = os.path.join(getattr(sys, "_MEIPASS", ""),
+                                   "app_virtual.ico")
             else:
                 ico = os.path.abspath(os.path.join(
-                    os.path.dirname(__file__), "..", "app.ico"))
+                    os.path.dirname(__file__), "..", "app_virtual.ico"))
             if os.path.exists(ico):
                 self.iconbitmap(ico)
         except Exception:
