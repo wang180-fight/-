@@ -189,7 +189,9 @@ def dec_status2(v):
         (0x04, "保护动作"),
     ]
     marks = [t for m, t in bits if v & m]
-    return ("新增: " + "、".join(marks)) if marks else "无新增事件"
+    # "新增:" 后使用不换行空格: 界面按宽度整体换行, 避免换行后第一行只剩
+    # "0xFC 新增:"(Tk 会优先在普通空格处断行)。
+    return ("新增:\u00a0" + "、".join(marks)) if marks else "无新增事件"
 
 
 def fmt_dt6(b):
@@ -488,6 +490,8 @@ class App(tk.Tk):
         left.columnconfigure(0, weight=1)
         self._build_values_card(left)
         self._build_anim_panel(left)
+        f.bind("<Configure>", self._fit_monitor)
+        self.after_idle(self._fit_monitor)
 
         right = ttk.Frame(f)
         right.grid(row=0, column=1, sticky="nsew")
@@ -505,6 +509,7 @@ class App(tk.Tk):
         box = self._card(parent, "实时电气量")
         box.grid(row=0, column=0, sticky="nsew")
         box.columnconfigure(0, weight=1)
+        self._values_box = box
 
         self.lb = {}
         self.lb_w = {}
@@ -517,10 +522,11 @@ class App(tk.Tk):
             ("运行状态字2", "", 1),
         ]
         CELL_BG = "#f1f5f9"        # 仅数值/单位单元格的浅灰底
-        COL_GAP = 12               # 单元格之间的白隙
-        ROW_GAP = 5                # 行间距
+        COL_GAP = 8                # 单元格之间的白隙
+        ROW_GAP = 4                # 行间距
         f_key = (self.FONT, 11, "bold")
         f_val = (self.FONT, 12, "bold")
+        f_txt = (self.FONT, 11, "bold")   # 状态字等文字型单元格(略小, 一行放得下)
         f_unit = (self.FONT, 10)
         for gr, (title, unit, n) in enumerate(rows):
             rowf = tk.Frame(box, bg=C_PANEL)          # 行背景与卡片同色(白)
@@ -531,23 +537,49 @@ class App(tk.Tk):
             tk.Label(rowf, text=title, bg=C_PANEL, fg=C_TEXT,
                      font=f_key, anchor=tk.W, padx=10).grid(
                 row=0, column=0, sticky=tk.W)
+            # 无单位的行(运行状态字1/2)是长文本, 数值单元格横向占满整行,
+            # 避免只占 1/4 列宽时文字被裁掉(如状态字2 多个新增事件)。
+            span = 4 if not unit else 1
             for c in range(n):
                 var = tk.StringVar(value="--")
                 self.lb[(title, c)] = var
-                lbl = tk.Label(rowf, textvariable=var, bg=CELL_BG, fg=C_TEXT,
-                               font=f_val, anchor=tk.W, padx=10, pady=2)
-                lbl.grid(row=0, column=1 + c, sticky="ew", padx=(0, COL_GAP))
+                lbl = tk.Label(rowf, textvariable=var, bg=CELL_BG,
+                               fg=C_TEXT, font=(f_val if unit else f_txt),
+                               anchor=tk.W, justify=tk.LEFT,
+                               padx=(10 if unit else 8),
+                               pady=(2 if unit else 1))
+                lbl.grid(row=0, column=1 + c, columnspan=span,
+                         sticky="ew", padx=(0, COL_GAP))
                 self.lb_w[(title, c)] = lbl
             if unit:
                 tk.Label(rowf, text=unit, bg=CELL_BG, fg=C_MUTED,
                          font=f_unit, anchor=tk.W, padx=10, pady=2).grid(
                     row=0, column=1 + n, sticky=tk.W)
+            elif n == 1:
+                # 窗口变窄时自动换行, 保证长文本始终完整可见(不截断)
+                lbl = self.lb_w[(title, 0)]
+
+                def _fit(_event=None, w=lbl, row=rowf):
+                    # 以标签实际宽度为准(扣掉左右内边距+2px), 避免换行宽度
+                    # 大于可视宽度反而被横向裁掉。
+                    def _apply():
+                        try:
+                            aw = w.winfo_width()
+                        except tk.TclError:
+                            return
+                        if aw > 80:
+                            wl = max(240, aw - 22)
+                            if int(float(w.cget("wraplength") or 0)) != wl:
+                                w.configure(wraplength=wl)
+                    row.after_idle(_apply)
+                    self._fit_monitor()
+                rowf.bind("<Configure>", _fit)
 
         note = tk.Label(
             box, bg="#eef2ff", fg=C_GRAY, justify=tk.LEFT, anchor=tk.NW,
-            font=(self.FONT, 9), padx=12, pady=6, wraplength=820,
+            font=(self.FONT, 9), padx=12, pady=5, wraplength=820,
             text=("状态字1: bit6-5=闸位(00分/01合), bit4-0=跳闸原因;"
-                  " 额定值由控制字4档位决定。\n"
+                  " 额定值由控制字4档位决定。  "
                   "剩余电流: 寄存器 0290FF00(最大相及剩余电流值)。"))
         note.grid(row=len(rows), column=0, sticky="ew", pady=(2, 0))
 
@@ -620,6 +652,10 @@ class App(tk.Tk):
         card.grid(row=1, column=0, sticky="ew", pady=(8, 0))
         card.rowconfigure(1, weight=1)
         card.columnconfigure(0, weight=1)
+        self._anim_card = card
+        self._anim_canvas_h = 300       # 画布标准高度(空间不足时自动收缩)
+        self._anim_chrome = 89          # 动画卡片中除画布外的高度(标题条/内边距)
+        self._fit_pending = False
 
         bar = ttk.Frame(card, style="Card.TFrame")
         bar.grid(row=0, column=0, sticky="ew", pady=(0, 4))
@@ -636,6 +672,55 @@ class App(tk.Tk):
         self.canvas = tk.Canvas(card, bg="#fbfcfe", highlightthickness=0,
                                 height=300)
         self.canvas.grid(row=1, column=0, sticky="nsew")
+
+    def _fit_monitor(self, _event=None):
+        """按可用高度收缩三相动画画布, 保证电气量卡片(含底部说明)不被裁切。
+
+        运行状态字1/2 为长文本, 窗口较窄/缩放较大时会自动换行使卡片变高;
+        此处把动画画布从 300px 逐步收到 250px(动画最低绘制高度)。若收到最低
+        高度仍放不下, 则暂时隐藏动画卡片, 优先保证数据与说明文字完整可见。
+        """
+        if getattr(self, "_fit_pending", False):
+            return
+        self._fit_pending = True
+
+        def _apply():
+            self._fit_pending = False
+            try:
+                avail = self._values_box.master.winfo_height()
+                box_h = self._values_box.winfo_reqheight()
+                cur = self.canvas.winfo_height()
+                anim_h = self._anim_card.winfo_height()
+                mapped = bool(self._anim_card.winfo_ismapped())
+            except (tk.TclError, AttributeError):
+                return
+            if avail <= 1:
+                return
+            if mapped and cur > 1 and anim_h > cur:
+                # 仅在画布已完成布局时记录"除画布外的高度", 避免未映射时取到 1px
+                self._anim_chrome = min(200, anim_h - cur)
+            # 放下数据卡片 + 间距 + 动画卡片(画布取最低高度)所需的高度
+            need = box_h + 8 + self._anim_chrome + 250
+            if mapped:
+                # 过渡态(窗口尚未完成布局)不隐藏, 避免误判
+                if need > avail and avail > 300 and box_h > 100:
+                    self._anim_card.grid_remove()   # 空间不足: 暂隐动画
+                    # 数据卡片不再被拉伸, 避免卡片内部出现大片空白
+                    self._values_box.master.rowconfigure(0, weight=0)
+                    # 布局稳定后再评估一次, 避免过渡态误隐藏
+                    self.after(80, self._fit_monitor)
+                    return
+                h = max(250, min(300, cur + (avail - 8 - box_h - anim_h)))
+                if abs(h - self._anim_canvas_h) >= 2:
+                    self._anim_canvas_h = h
+                    self.canvas.configure(height=h)
+                    self._draw_anim()
+            elif need <= avail - 12:                # 空间恢复(留迟滞): 重新显示
+                self._values_box.master.rowconfigure(0, weight=1)
+                self._anim_card.grid()
+                self.canvas.configure(height=self._anim_canvas_h)
+                self._draw_anim()
+        self.after_idle(_apply)
 
     def _anim_state(self):
         """由状态字1推导 (pos, reason): pos 0=分闸 1=合闸 2=故障 3=未知。"""
@@ -1629,12 +1714,15 @@ class App(tk.Tk):
         elif di == (0x04, 0x00, 0x05, 0x01):    # 状态字1
             v = data[0] if data else 0
             self._st1 = v
-            self._lb("运行状态字1").set("0x%02X  %s" % (v, dec_status1(v)))
+            # 用不换行空格分隔十六进制值, 避免自动换行时第一行只剩 "0x20"
+            self._lb("运行状态字1").set("0x%02X\u00a0\u00a0%s"
+                                       % (v, dec_status1(v)))
             self._color_lb("运行状态字1", self._st_color())
             self._maybe_arc()
         elif di == (0x04, 0x00, 0x05, 0x02):    # 状态字2
             v = data[0] if data else 0
-            self._lb("运行状态字2").set("0x%02X  %s" % (v, dec_status2(v)))
+            self._lb("运行状态字2").set("0x%02X\u00a0\u00a0%s"
+                                       % (v, dec_status2(v)))
         elif di == (0x03, 0x30, 0x01, 0x00):    # 清零次数
             self.var_stat.set("数据清零次数: %d 次" % bcd_num(data))
         elif di == (0x03, 0x81, 0x01, 0x01):    # 运行时间(分)
